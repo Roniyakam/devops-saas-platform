@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # devops-saas-platform
 
 Plateforme SaaS distribuée déployée en GitOps sur Kubernetes (K3s).
@@ -65,3 +66,6 @@ kubectl get nodes
 - [ ] **S2** — GitOps + Vault + Celery + RabbitMQ
 - [ ] **S3** — PostgreSQL HA + Observabilité
 - [ ] **S4** — Publication GitHub/LinkedIn
+=======
+# devops-saas-platform
+>>>>>>> 403d707ad9211fcf856d2d95ea0a61687317a33a
