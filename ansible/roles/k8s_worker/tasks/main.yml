@@ -15,17 +15,90 @@
   when: not k8s_worker_k3s_binary.stat.exists
   tags: [k8s_worker, k3s]
 
+- name: Vérifier si la configuration K3s agent existe déjà
+  ansible.builtin.stat:
+    path: "{{ k8s_worker_k3s_agent_config_path }}"
+  register: k8s_worker_existing_config
+  tags: [k8s_worker, k3s]
+
+- name: Lire la configuration K3s agent existante
+  ansible.builtin.slurp:
+    src: "{{ k8s_worker_k3s_agent_config_path }}"
+  register: k8s_worker_existing_config_content
+  when: k8s_worker_existing_config.stat.exists
+  tags: [k8s_worker, k3s]
+
+# La présence du binaire ne suffit pas à garantir une jonction correcte :
+# un install précédent sans K3S_URL valide laisse un agent connecté à
+# 127.0.0.1. On ne réinstalle donc que si le binaire manque ou si la
+# config existante ne référence pas l'IP du master attendue.
+- name: Déterminer si l'agent doit être (ré)installé
+  ansible.builtin.set_fact:
+    k8s_worker_needs_install: >-
+      {{ not k8s_worker_k3s_binary.stat.exists
+         or not k8s_worker_existing_config.stat.exists
+         or k8s_worker_master_ip not in (k8s_worker_existing_config_content.content | b64decode) }}
+  tags: [k8s_worker, k3s]
+
+# Le fact k3s_node_token est défini par le rôle k8s_master via set_fact,
+# donc absent si le play master est sauté (ex: --limit k8s_workers). On lit
+# le token directement sur le master pour rendre ce rôle autonome.
+- name: Lire le token K3s directement sur le master
+  ansible.builtin.slurp:
+    src: /var/lib/rancher/k3s/server/node-token
+  register: k8s_worker_node_token_raw
+  delegate_to: "{{ groups['k8s_master'][0] }}"
+  tags: [k8s_worker, k3s]
+
+- name: Définir le fact local du token K3s
+  ansible.builtin.set_fact:
+    k8s_worker_node_token: "{{ k8s_worker_node_token_raw.content | b64decode | trim }}"
+  tags: [k8s_worker, k3s]
+
 - name: Joindre le worker au cluster K3s
   ansible.builtin.shell: |
     set -o pipefail
     INSTALL_K3S_VERSION="{{ k3s_version }}" \
     K3S_URL="https://{{ k8s_worker_master_ip }}:{{ k8s_worker_k3s_api_port }}" \
-    K3S_TOKEN="{{ hostvars[groups['k8s_master'][0]]['k3s_node_token'] }}" \
+    K3S_TOKEN="{{ k8s_worker_node_token }}" \
     {{ k8s_worker_k3s_install_script_path }} agent
   args:
-    creates: /usr/local/bin/k3s
     executable: /bin/bash
-  when: not k8s_worker_k3s_binary.stat.exists
+  when: k8s_worker_needs_install
+  changed_when: true
+  tags: [k8s_worker, k3s]
+
+- name: Créer le répertoire de configuration K3s agent
+  ansible.builtin.file:
+    path: "{{ k8s_worker_k3s_agent_config_path | dirname }}"
+    state: directory
+    mode: "0755"
+  tags: [k8s_worker, k3s]
+
+- name: Écrire la configuration persistante K3s agent (server + token)
+  ansible.builtin.copy:
+    dest: "{{ k8s_worker_k3s_agent_config_path }}"
+    mode: "0600"
+    content: |
+      server: https://{{ k8s_worker_master_ip }}:{{ k8s_worker_k3s_api_port }}
+      token: {{ k8s_worker_node_token }}
+  tags: [k8s_worker, k3s]
+
+- name: Relire la configuration K3s agent écrite
+  ansible.builtin.slurp:
+    src: "{{ k8s_worker_k3s_agent_config_path }}"
+  register: k8s_worker_written_config_content
+  tags: [k8s_worker, k3s]
+
+- name: Vérifier que la configuration référence l'IP du master et non 127.0.0.1
+  ansible.builtin.assert:
+    that:
+      - "'127.0.0.1' not in (k8s_worker_written_config_content.content | b64decode)"
+      - k8s_worker_master_ip in (k8s_worker_written_config_content.content | b64decode)
+    fail_msg: >-
+      La configuration K3s agent ne référence pas l'IP du master attendue
+      ({{ k8s_worker_master_ip }}).
+    success_msg: "Configuration K3s agent valide : IP master correctement référencée."
   tags: [k8s_worker, k3s]
 
 - name: Démarrer et activer le service K3s agent
