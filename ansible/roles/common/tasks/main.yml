@@ -22,11 +22,6 @@
     name: "{{ common_timezone }}"
   tags: [common, timezone]
 
-- name: Synchroniser l'horloge matérielle
-  ansible.builtin.command: hwclock --systohc
-  changed_when: false
-  tags: [common, timezone]
-
 - name: Créer l'utilisateur de service
   ansible.builtin.user:
     name: "{{ common_service_user }}"
