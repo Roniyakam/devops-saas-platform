@@ -7,16 +7,25 @@
   register: k8s_master_k3s_binary
   tags: [k8s_master, k3s]
 
+- name: Télécharger le script d'installation K3s
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: "{{ k8s_master_k3s_install_script_path }}"
+    mode: "0755"
+  when: not k8s_master_k3s_binary.stat.exists
+  tags: [k8s_master, k3s]
+
 - name: Installer K3s control-plane
   # --disable : services embarqués désactivés car déployés via GitOps (ArgoCD)
   # Précédence Jinja2 : parenthèses obligatoires autour de la concaténation + filtre join
   ansible.builtin.shell: |
-    curl -sfL https://get.k3s.io | \
+    set -o pipefail
     INSTALL_K3S_VERSION="{{ k3s_version }}" \
-    sh -s - server \
+    {{ k8s_master_k3s_install_script_path }} server \
     --disable={{ ('--disable=' + (k8s_master_k3s_disable | join(','))) | regex_replace('^--disable=', '') }}
   args:
     creates: /usr/local/bin/k3s
+    executable: /bin/bash
   when: not k8s_master_k3s_binary.stat.exists
   tags: [k8s_master, k3s]
 

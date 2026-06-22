@@ -10,6 +10,9 @@ k8s_master_k3s_disable:
 # Répertoire de configuration K3s
 k8s_master_k3s_config_dir: "/etc/rancher/k3s"
 
+# Chemin local du script d'installation K3s téléchargé (get_url)
+k8s_master_k3s_install_script_path: "/tmp/k3s-install.sh"
+
 # Chemin du kubeconfig généré par K3s
 k8s_master_kubeconfig_path: "/etc/rancher/k3s/k3s.yaml"
 

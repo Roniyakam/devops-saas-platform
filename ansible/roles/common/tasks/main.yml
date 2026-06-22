@@ -42,7 +42,9 @@
     user: "{{ common_service_user }}"
     state: present
     key: "{{ lookup('file', common_devops_ssh_public_key_path) }}"
-  when: common_devops_ssh_public_key_path != ""
+  when:
+    - common_devops_ssh_public_key_path != ""
+    - not ansible_check_mode
   tags: [common, users, ssh]
 
 - name: Charger les modules kernel requis pour K8s (br_netfilter, overlay)

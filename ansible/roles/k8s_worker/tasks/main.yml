@@ -7,15 +7,24 @@
   register: k8s_worker_k3s_binary
   tags: [k8s_worker, k3s]
 
+- name: Télécharger le script d'installation K3s
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: "{{ k8s_worker_k3s_install_script_path }}"
+    mode: "0755"
+  when: not k8s_worker_k3s_binary.stat.exists
+  tags: [k8s_worker, k3s]
+
 - name: Joindre le worker au cluster K3s
   ansible.builtin.shell: |
-    curl -sfL https://get.k3s.io | \
+    set -o pipefail
     INSTALL_K3S_VERSION="{{ k3s_version }}" \
     K3S_URL="https://{{ k8s_worker_master_ip }}:{{ k8s_worker_k3s_api_port }}" \
     K3S_TOKEN="{{ hostvars[groups['k8s_master'][0]]['k3s_node_token'] }}" \
-    sh -s - agent
+    {{ k8s_worker_k3s_install_script_path }} agent
   args:
     creates: /usr/local/bin/k3s
+    executable: /bin/bash
   when: not k8s_worker_k3s_binary.stat.exists
   tags: [k8s_worker, k3s]
 
