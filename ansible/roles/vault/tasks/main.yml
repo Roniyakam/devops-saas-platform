@@ -1,0 +1,243 @@
+---
+# Rôle vault : déploiement HashiCorp Vault sur K3s via Helm (mode dev, S2)
+
+- name: Vérifier que le root token dev est fourni (vault.yml chiffré)
+  ansible.builtin.assert:
+    that:
+      - vault_dev_root_token is defined
+    fail_msg: >-
+      vault_dev_root_token n'est pas défini. Créez vault.yml à partir de
+      vault.yml.example puis chiffrez-le avec ansible-vault (voir
+      vault.yml.example pour le format attendu).
+    success_msg: "vault_dev_root_token est défini."
+  tags: [vault]
+
+# --- Installation de Helm (idempotent : stat puis skip si déjà présent) ---
+
+- name: Vérifier si Helm est déjà installé
+  ansible.builtin.stat:
+    path: /usr/local/bin/helm
+  register: vault_helm_binary
+  tags: [vault, helm]
+
+- name: Télécharger l'archive Helm (vérifiée par checksum)
+  ansible.builtin.get_url:
+    url: "{{ vault_helm_download_url }}"
+    dest: "{{ vault_helm_archive_path }}"
+    checksum: "{{ vault_helm_archive_checksum }}"
+    mode: "0644"
+  when: not vault_helm_binary.stat.exists
+  check_mode: false  # outillage local du nœud de contrôle, pas un changement géré par GitOps
+  tags: [vault, helm]
+
+- name: Créer le répertoire d'extraction Helm
+  ansible.builtin.file:
+    path: "{{ vault_helm_extract_dir }}"
+    state: directory
+    mode: "0755"
+  when: not vault_helm_binary.stat.exists
+  check_mode: false
+  tags: [vault, helm]
+
+- name: Extraire l'archive Helm
+  ansible.builtin.unarchive:
+    src: "{{ vault_helm_archive_path }}"
+    dest: "{{ vault_helm_extract_dir }}"
+    remote_src: true
+  when: not vault_helm_binary.stat.exists
+  check_mode: false
+  tags: [vault, helm]
+
+- name: Installer le binaire Helm
+  ansible.builtin.copy:
+    src: "{{ vault_helm_extract_dir }}/linux-amd64/helm"
+    dest: /usr/local/bin/helm
+    mode: "0755"
+    remote_src: true
+  when: not vault_helm_binary.stat.exists
+  check_mode: false
+  tags: [vault, helm]
+
+# --- Dépôt Helm hashicorp (idempotent : ajout seulement si absent) ---
+
+- name: Lister les dépôts Helm existants
+  ansible.builtin.command: helm repo list
+  register: vault_helm_repo_list
+  changed_when: false
+  failed_when: false
+  tags: [vault, helm]
+
+- name: Ajouter le dépôt Helm hashicorp
+  ansible.builtin.command: >-
+    helm repo add {{ vault_helm_repo_name }} {{ vault_helm_repo_url }}
+  when: vault_helm_repo_name not in (vault_helm_repo_list.stdout | default(''))
+  changed_when: true
+  tags: [vault, helm]
+
+# --- Namespace vault (idempotent : pattern identique au namespace ArgoCD) ---
+
+- name: Créer le namespace vault
+  ansible.builtin.command: kubectl create namespace {{ vault_namespace }}
+  register: vault_namespace_create
+  changed_when: "'created' in vault_namespace_create.stdout"
+  failed_when:
+    - vault_namespace_create.rc != 0
+    - "'already exists' not in vault_namespace_create.stderr"
+  tags: [vault, namespace]
+
+# --- Déploiement du chart (idempotent : comparaison du manifeste rendu avant/après) ---
+# helm upgrade --install incrémente toujours le numéro de révision, même sans
+# changement réel (vérifié empiriquement) : la révision n'est donc pas un
+# signal d'idempotence fiable. On compare le manifeste rendu (objets K8s
+# réels), seul reflet fidèle d'un changement effectif — même principe que le
+# "kubectl diff" déjà utilisé dans k8s_master pour ArgoCD.
+
+- name: Relever le manifeste Helm actuel de Vault (avant déploiement)
+  ansible.builtin.command: helm get manifest {{ vault_release_name }} -n {{ vault_namespace }}
+  register: vault_helm_manifest_before
+  changed_when: false
+  failed_when: false
+  no_log: true
+  tags: [vault, helm]
+
+- name: Déployer le chart Helm hashicorp/vault (upgrade --install, idempotent par design)
+  ansible.builtin.command: >-
+    helm upgrade --install {{ vault_release_name }} {{ vault_helm_repo_name }}/vault
+    --version {{ vault_chart_version }}
+    --namespace {{ vault_namespace }}
+    --set server.dev.enabled=true
+    --set server.dev.devRootToken={{ vault_dev_root_token }}
+    --set injector.enabled=true
+  register: vault_helm_upgrade
+  changed_when: false
+  no_log: true
+  tags: [vault, helm]
+
+- name: Relever le manifeste Helm actuel de Vault (après déploiement)
+  ansible.builtin.command: helm get manifest {{ vault_release_name }} -n {{ vault_namespace }}
+  register: vault_helm_manifest_after
+  changed_when: >-
+    (vault_helm_manifest_after.stdout | default('')) != (vault_helm_manifest_before.stdout | default(''))
+  no_log: true
+  tags: [vault, helm]
+
+# --- Attente des pods ---
+
+- name: Attendre que le pod vault-0 soit Ready
+  ansible.builtin.command: >-
+    kubectl wait pod/{{ vault_release_name }}-0 -n {{ vault_namespace }}
+    --for=condition=Ready --timeout={{ vault_pod_ready_timeout }}
+  changed_when: false
+  tags: [vault, wait]
+
+- name: Attendre que le pod injector soit Ready
+  ansible.builtin.command: >-
+    kubectl wait pod -n {{ vault_namespace }}
+    -l app.kubernetes.io/name=vault-agent-injector
+    --for=condition=Ready --timeout={{ vault_pod_ready_timeout }}
+  changed_when: false
+  tags: [vault, wait]
+
+# --- Méthode d'authentification kubernetes (idempotent : ignore "already in use") ---
+
+- name: Activer la méthode d'authentification kubernetes
+  ansible.builtin.command: >-
+    kubectl exec -n {{ vault_namespace }} {{ vault_release_name }}-0 --
+    vault auth enable kubernetes
+  register: vault_auth_enable
+  changed_when: vault_auth_enable.rc == 0
+  failed_when:
+    - vault_auth_enable.rc != 0
+    - "'already in use' not in vault_auth_enable.stderr"
+  tags: [vault, auth]
+
+- name: Vérifier si auth/kubernetes/config est déjà configurée
+  ansible.builtin.command: >-
+    kubectl exec -n {{ vault_namespace }} {{ vault_release_name }}-0 --
+    vault read -field=kubernetes_host auth/kubernetes/config
+  register: vault_k8s_auth_config_current
+  changed_when: false
+  failed_when: false
+  tags: [vault, auth]
+
+# Le hôte API, la CA et le token reviewer JWT sont lus directement depuis le
+# pod (env K8s injectées + fichiers serviceaccount montés) : aucune valeur
+# secrète ne transite par une variable Ansible. Fonctionne sans
+# ServiceAccount/ClusterRoleBinding dédié car le chart officiel active
+# server.authDelegator.enabled=true par défaut (system:auth-delegator déjà
+# posé sur la SA de vault-0).
+- name: Configurer auth/kubernetes/config (token lu depuis le pod, jamais exposé à Ansible)
+  ansible.builtin.command: >-
+    kubectl exec -n {{ vault_namespace }} {{ vault_release_name }}-0 -- sh -c
+    'vault write auth/kubernetes/config
+    kubernetes_host="https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT"
+    kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    token_reviewer_jwt=@/var/run/secrets/kubernetes.io/serviceaccount/token'
+  when: vault_k8s_auth_config_current.rc != 0
+  changed_when: true
+  no_log: true
+  tags: [vault, auth]
+
+# --- Policies Vault read-only par secret engine (rabbitmq, celery, postgres) ---
+# Limitation connue : le pattern lecture-avant-écriture détecte l'absence
+# d'une policy/d'un rôle mais pas la dérive de contenu (Vault CLI n'a pas
+# d'équivalent à "kubectl diff"). Si vault_k8s_role_ttl change, un rôle déjà
+# créé ne sera pas mis à jour automatiquement — acceptable pour ce
+# portfolio, à corriger ultérieurement si nécessaire (S2+).
+
+- name: Lire les policies Vault existantes
+  ansible.builtin.command: >-
+    kubectl exec -n {{ vault_namespace }} {{ vault_release_name }}-0 --
+    vault policy read {{ item }}
+  loop: "{{ vault_k8s_secrets_roles }}"
+  loop_control:
+    label: "{{ item }}"
+  register: vault_policy_read_before
+  changed_when: false
+  failed_when: false
+  tags: [vault, policy]
+
+- name: Écrire les policies Vault read-only par secret engine
+  ansible.builtin.command:
+    cmd: >-
+      kubectl exec -i -n {{ vault_namespace }} {{ vault_release_name }}-0 --
+      vault policy write {{ item.item }} -
+    stdin: |
+      path "secret/data/{{ item.item }}/*" {
+        capabilities = ["read", "list"]
+      }
+  loop: "{{ vault_policy_read_before.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.rc != 0
+  changed_when: true
+  tags: [vault, policy]
+
+# --- Rôles d'authentification kubernetes liés aux policies ---
+
+- name: Lire les rôles d'authentification kubernetes existants
+  ansible.builtin.command: >-
+    kubectl exec -n {{ vault_namespace }} {{ vault_release_name }}-0 --
+    vault read auth/kubernetes/role/{{ item }}
+  loop: "{{ vault_k8s_secrets_roles }}"
+  loop_control:
+    label: "{{ item }}"
+  register: vault_k8s_role_read_before
+  changed_when: false
+  failed_when: false
+  tags: [vault, auth]
+
+- name: Créer les rôles d'authentification kubernetes liés aux policies
+  ansible.builtin.command: >-
+    kubectl exec -n {{ vault_namespace }} {{ vault_release_name }}-0 --
+    vault write auth/kubernetes/role/{{ item.item }}
+    bound_service_account_names={{ item.item }}
+    bound_service_account_namespaces={{ vault_k8s_role_sa_namespace }}
+    policies={{ item.item }}
+    ttl={{ vault_k8s_role_ttl }}
+  loop: "{{ vault_k8s_role_read_before.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.rc != 0
+  changed_when: true
+  tags: [vault, auth]

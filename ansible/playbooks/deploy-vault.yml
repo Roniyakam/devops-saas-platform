@@ -1,0 +1,17 @@
+---
+# Déploiement HashiCorp Vault (mode dev) via Helm sur le cluster K3s existant
+# Prérequis : playbooks/deploy-k8s.yml déjà exécuté (kubeconfig dans fetched/)
+# et vault.yml chiffré présent (voir vault.yml.example)
+# Usage : ansible-playbook -i inventories/scaleway/hosts.ini playbooks/deploy-vault.yml --vault-password-file ~/.vault_pass
+
+- name: Déploiement Vault sur K3s via Helm
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../roles/k8s_master/defaults/main.yml
+    - ../vault.yml
+  environment:
+    KUBECONFIG: "{{ vault_kubeconfig_path }}"
+  roles:
+    - role: vault
