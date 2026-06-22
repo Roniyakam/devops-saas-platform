@@ -27,3 +27,41 @@
     persistent: present
   when: "'br_netfilter' not in k8s_common_lsmod_output.stdout"
   tags: [k8s_common, kernel]
+
+# UFW - ports requis par le cluster K3s, restreints aux sources autorisées
+# (réseau privé Scaleway + IP publiques des nodes). Le rôle common a déjà
+# activé UFW (deny incoming par défaut) ; on ne fait qu'ajouter des règles
+# allow, donc pas de risque de coupure de connexion ici.
+# IP publiques résolues depuis l'inventaire (ansible_host), jamais en dur
+# dans un fichier versionné (règle non négociable n°6).
+
+- name: Déterminer les hosts du cluster pour résolution des IP publiques
+  ansible.builtin.set_fact:
+    k8s_common_ufw_cluster_hosts: "{{ k8s_common_ufw_cluster_groups | map('extract', groups) | sum(start=[]) | unique | list }}"
+  tags: [k8s_common, firewall]
+
+- name: UFW - Autoriser les ports du cluster K3s depuis le réseau privé Scaleway
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+    src: "{{ k8s_common_ufw_cluster_private_network }}"
+    comment: "{{ item.comment }} - reseau prive"
+  loop: "{{ k8s_common_ufw_cluster_ports }}"
+  loop_control:
+    label: "{{ item.port }}/{{ item.proto }} <- reseau prive"
+  become: true
+  tags: [k8s_common, firewall]
+
+- name: UFW - Autoriser les ports du cluster K3s depuis les IP publiques des nodes
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.0.port }}"
+    proto: "{{ item.0.proto }}"
+    src: "{{ hostvars[item.1].ansible_host }}"
+    comment: "{{ item.0.comment }} - {{ item.1 }}"
+  loop: "{{ k8s_common_ufw_cluster_ports | product(k8s_common_ufw_cluster_hosts) | list }}"
+  loop_control:
+    label: "{{ item.0.port }}/{{ item.0.proto }} <- {{ item.1 }}"
+  become: true
+  tags: [k8s_common, firewall]

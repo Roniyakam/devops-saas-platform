@@ -7,3 +7,23 @@ k8s_common_container_runtime: "containerd"
 
 # Répertoire des manifestes K8s statiques (non utilisé avec K3s, présent pour référence)
 k8s_common_manifests_dir: "/var/lib/rancher/k3s/server/manifests"
+
+# Ports UFW requis pour le fonctionnement du cluster K3s entre les nodes
+k8s_common_ufw_cluster_ports:
+  - { port: "6443", proto: "tcp", comment: "K3s API server" }
+  - { port: "10250", proto: "tcp", comment: "Kubelet API" }
+  - { port: "8472", proto: "udp", comment: "Flannel VXLAN overlay" }
+  - { port: "51820", proto: "udp", comment: "WireGuard (K3s overlay chiffré)" }
+
+# Réseau privé Scaleway autorisé pour les ports ci-dessus (cf. common_ufw_allow_networks)
+k8s_common_ufw_cluster_private_network: "10.0.0.0/8"
+
+# Groupes d'inventaire dont les IP publiques doivent être autorisées sur les
+# ports ci-dessus : les nodes communiquent actuellement via IP publique, pas
+# seulement via le réseau privé. Les IP ne sont jamais committées en dur ici :
+# elles sont résolues dynamiquement depuis l'inventaire (ansible_host),
+# voir tasks/main.yml (règle non négociable n°6 : pas d'IP en clair dans Git).
+k8s_common_ufw_cluster_groups:
+  - infra
+  - k8s_master
+  - k8s_workers
