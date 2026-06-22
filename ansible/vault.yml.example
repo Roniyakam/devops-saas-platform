@@ -12,6 +12,9 @@
 # vault_postgres_replication_password: "changeme"
 # vault_postgres_superuser_password: "changeme"
 
+# Root token Vault en mode dev (S2 - HashiCorp Vault, rôle vault)
+# vault_dev_root_token: "changeme"
+
 # Token Scaleway API (pour le provisioning Terraform futur)
 # vault_scaleway_access_key: "SCWXXXXXXXXXXXXXXXXX"
 # vault_scaleway_secret_key: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"

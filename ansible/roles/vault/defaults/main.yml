@@ -1,0 +1,42 @@
+---
+# Variables du rôle vault — préfixées vault_*
+
+# Version du binaire Helm (pinnée — règle non négociable n°5)
+vault_helm_version: "3.14.4"
+vault_helm_download_url: "https://get.helm.sh/helm-v{{ vault_helm_version }}-linux-amd64.tar.gz"
+vault_helm_archive_checksum: "sha256:a5844ef2c38ef6ddf3b5a8f7d91e7e0e8ebc39a38bb3fc8013d629c1ef29c259"
+vault_helm_archive_path: "/tmp/helm-v{{ vault_helm_version }}-linux-amd64.tar.gz"
+vault_helm_extract_dir: "/tmp/helm-v{{ vault_helm_version }}-extract"
+
+# Dépôt Helm HashiCorp
+vault_helm_repo_name: "hashicorp"
+vault_helm_repo_url: "https://helm.releases.hashicorp.com"
+
+# Chart Vault (version pinnée — règle non négociable n°5)
+vault_chart_version: "0.28.1"
+vault_release_name: "vault"
+vault_namespace: "vault"
+
+# vault_dev_root_token : PAS de valeur par défaut ici — doit être fourni par
+# vault.yml chiffré (ansible-vault), voir vault.yml.example. Mode dev
+# uniquement (auto-unseal, token connu) — jamais utilisé en production.
+
+# Délai d'attente des pods (kubectl wait)
+vault_pod_ready_timeout: "120s"
+
+# Service accounts cibles pas encore créées (prévues S2 : rabbitmq, celery —
+# S3 : postgres, voir plan d'exécution CLAUDE.md). Les rôles d'auth
+# kubernetes sont créés par anticipation : Vault ne valide l'existence de la
+# SA qu'au moment du login, jamais à l'écriture du rôle.
+vault_k8s_secrets_roles:
+  - rabbitmq
+  - celery
+  - postgres
+vault_k8s_role_sa_namespace: "default"
+vault_k8s_role_ttl: "1h"
+
+# Chemin local du kubeconfig K3s — importé depuis le rôle k8s_master
+# (k8s_master_kubeconfig_local_dir) sans exécuter son rôle, voir
+# playbooks/deploy-vault.yml (vars_files).
+vault_kubeconfig_path: >-
+  {{ k8s_master_kubeconfig_local_dir }}/{{ hostvars[groups['k8s_master'][0]].inventory_hostname }}-k3s.yaml
