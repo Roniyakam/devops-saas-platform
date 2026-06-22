@@ -24,3 +24,9 @@ k8s_master_argocd_namespace: "argocd"
 
 # Version ArgoCD (toujours pinnée, jamais latest)
 k8s_master_argocd_version: "v2.10.4"
+
+# Chemin local du manifeste ArgoCD téléchargé (vérifié par checksum)
+k8s_master_argocd_manifest_path: "/tmp/argocd-install-{{ k8s_master_argocd_version }}.yaml"
+
+# SHA256 du manifeste ArgoCD v2.10.4 (épinglé — supply chain, voir CLAUDE.md)
+k8s_master_argocd_manifest_checksum: "sha256:2dedd96d7463b7406ee19a139e6f5515c7fb939e1015af5080637682136d843a"

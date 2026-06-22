@@ -54,11 +54,34 @@
   become: false
   tags: [k8s_master, kubeconfig]
 
+- name: Vérifier si le kubeconfig local référence déjà l'IP réelle du master
+  # Le kubeconfig distant contient toujours 127.0.0.1 (généré ainsi par K3s) :
+  # sans cette garde, fetch+replace s'exécuteraient à chaque run (idempotence cassée).
+  ansible.builtin.command: >
+    grep -q 'https://{{ ansible_host }}:6443' {{ k8s_master_kubeconfig_local_dir }}/{{ inventory_hostname }}-k3s.yaml
+  register: k8s_master_kubeconfig_uptodate
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  failed_when: false
+  tags: [k8s_master, kubeconfig]
+
 - name: Récupérer le kubeconfig en local
   ansible.builtin.fetch:
     src: "{{ k8s_master_kubeconfig_path }}"
     dest: "{{ k8s_master_kubeconfig_local_dir }}/{{ inventory_hostname }}-k3s.yaml"
     flat: true
+  when: k8s_master_kubeconfig_uptodate.rc != 0
+  tags: [k8s_master, kubeconfig]
+
+- name: Corriger l'IP du kubeconfig local (127.0.0.1 -> IP réelle du master)
+  ansible.builtin.replace:
+    path: "{{ k8s_master_kubeconfig_local_dir }}/{{ inventory_hostname }}-k3s.yaml"
+    regexp: 'https://127\.0\.0\.1:6443'
+    replace: "https://{{ ansible_host }}:6443"
+  delegate_to: localhost
+  become: false
+  when: k8s_master_kubeconfig_uptodate.rc != 0
   tags: [k8s_master, kubeconfig]
 
 - name: Récupérer le token K3s pour les workers
@@ -82,10 +105,28 @@
     - "'already exists' not in k8s_master_argocd_ns.stderr"
   tags: [k8s_master, argocd]
 
-- name: Déployer ArgoCD (version pinnée)
+- name: Télécharger le manifeste ArgoCD (vérifié par checksum)
+  ansible.builtin.get_url:
+    url: "https://raw.githubusercontent.com/argoproj/argo-cd/{{ k8s_master_argocd_version }}/manifests/install.yaml"
+    dest: "{{ k8s_master_argocd_manifest_path }}"
+    checksum: "{{ k8s_master_argocd_manifest_checksum }}"
+    mode: "0644"
+  tags: [k8s_master, argocd]
+
+- name: Calculer le diff ArgoCD par rapport à l'état du cluster
+  # kubectl diff : rc=0 (aucun changement), rc=1 (changements détectés), rc>1 (erreur)
+  ansible.builtin.command: >
+    k3s kubectl diff -n {{ k8s_master_argocd_namespace }}
+    -f {{ k8s_master_argocd_manifest_path }}
+  register: k8s_master_argocd_diff
+  changed_when: k8s_master_argocd_diff.rc == 1
+  failed_when: k8s_master_argocd_diff.rc > 1
+  tags: [k8s_master, argocd]
+
+- name: Appliquer le manifeste ArgoCD si des changements sont détectés
   ansible.builtin.command: >
     k3s kubectl apply -n {{ k8s_master_argocd_namespace }}
-    -f https://raw.githubusercontent.com/argoproj/argo-cd/{{ k8s_master_argocd_version }}/manifests/install.yaml
-  register: k8s_master_argocd_deploy
-  changed_when: "'configured' in k8s_master_argocd_deploy.stdout or 'created' in k8s_master_argocd_deploy.stdout"
+    -f {{ k8s_master_argocd_manifest_path }}
+  when: k8s_master_argocd_diff.rc == 1
+  changed_when: true
   tags: [k8s_master, argocd]
