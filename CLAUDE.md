@@ -73,6 +73,55 @@ kubectl get nodes
 - sysctl : fichier dédié `/etc/sysctl.d/99-k8s-platform.conf` (priorité max,
   ne peut pas être écrasé par d'autres confs système)
 
+## Méthode de travail avec Claude Code
+
+1. CLAUDE.md est la source de vérité unique — le lire avant toute tâche.
+
+2. Une tâche par prompt — la cadrer avec : objectif, périmètre, contraintes,
+   validation attendue.
+
+3. Pour les changements touchant 3 fichiers ou plus : demander un plan
+   d'abord, aucune modification avant validation.
+
+4. Travailler par petites étapes : modifier → lint → test → commit → étape
+   suivante.
+
+5. Gates de validation avant tout commit :
+   - ansible-lint : 0 violation (profil production)
+   - ansible-playbook --check : failed=0
+   - ansible-playbook (réel) : failed=0
+   - check-idempotence.sh : changed=0
+
+6. Ne jamais afficher de secrets, IPs, tokens ou credentials dans un fichier.
+
+7. Tout nouveau rôle doit suivre la convention de nommage : préfixe
+   nomdurole_*.
+
+8. Pas de tag `latest` — toujours pinner les versions avec justification en
+   commentaire.
+
+9. Après chaque tâche : git add, git commit (conventional commits), git push.
+
+10. Nouvelle mission = nouvelle session Claude Code pour éviter la pollution
+    de contexte.
+
+## Security rules (DevSecOps 2026)
+
+- Zero trust : aucune confiance implicite entre composants, mTLS pour les
+  communications service-to-service.
+- Secrets : ansible-vault pour la couche Ansible, HashiCorp Vault pour la
+  couche K8s.
+- Least privilege : chaque service account avec uniquement les permissions
+  minimales nécessaires.
+- Supply chain : toutes les images et charts vérifiées par checksum avant
+  utilisation.
+- Audit trail : chaque run Ansible journalisé, chaque action K8s uniquement
+  via ArgoCD.
+- Vulnerability scanning : prévu pour S3 (Trivy sur les images, kube-bench
+  sur le cluster).
+- Network segmentation : UFW sur toutes les VMs, NetworkPolicy sur les
+  namespaces K8s.
+
 ## Plan d'exécution
 
 - **S1** : Fondations Git + Ansible + Kubernetes  ← **TERMINÉ**
