@@ -1,0 +1,29 @@
+---
+# Rôle k8s_common : prérequis communs à toutes les instances du cluster K8s
+# Appliqué sur k8s_master ET k8s_workers
+
+- name: Désactiver le swap (requis par K8s)
+  ansible.builtin.command: swapoff -a
+  changed_when: false
+  tags: [k8s_common, swap]
+
+- name: Désactiver le swap de façon permanente dans /etc/fstab
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^([^#].*\s+swap\s+.*)$'
+    replace: '# \1'
+  tags: [k8s_common, swap]
+
+- name: Vérifier que br_netfilter est chargé
+  ansible.builtin.command: lsmod
+  register: k8s_common_lsmod_output
+  changed_when: false
+  tags: [k8s_common, kernel]
+
+- name: Charger br_netfilter si absent
+  community.general.modprobe:
+    name: br_netfilter
+    state: present
+    persistent: present
+  when: "'br_netfilter' not in k8s_common_lsmod_output.stdout"
+  tags: [k8s_common, kernel]

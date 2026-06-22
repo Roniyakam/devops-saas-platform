@@ -1,0 +1,23 @@
+---
+# Variables du rôle k8s_master — préfixées k8s_master_*
+# k3s_version est définie dans group_vars/all.yml
+
+# Services K3s à désactiver (on déploie nos propres versions via ArgoCD)
+k8s_master_k3s_disable:
+  - traefik
+  - servicelb
+
+# Répertoire de configuration K3s
+k8s_master_k3s_config_dir: "/etc/rancher/k3s"
+
+# Chemin du kubeconfig généré par K3s
+k8s_master_kubeconfig_path: "/etc/rancher/k3s/k3s.yaml"
+
+# Répertoire local où récupérer le kubeconfig (fetch)
+k8s_master_kubeconfig_local_dir: "{{ playbook_dir }}/../fetched"
+
+# ArgoCD namespace
+k8s_master_argocd_namespace: "argocd"
+
+# Version ArgoCD (toujours pinnée, jamais latest)
+k8s_master_argocd_version: "v2.10.4"

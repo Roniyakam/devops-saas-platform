@@ -1,0 +1,9 @@
+---
+# Playbook socle : applique le rôle common à toutes les instances Scaleway
+# Usage : ansible-playbook -i inventories/scaleway/hosts.ini playbooks/site.yml -u root
+- name: Socle commun toutes instances
+  hosts: scaleway
+  become: true
+  gather_facts: true
+  roles:
+    - role: common

@@ -1,0 +1,17 @@
+---
+# EXEMPLE de fichier vault — NE JAMAIS committer vault.yml avec des vraies valeurs
+# Créer vault.yml à partir de ce modèle et chiffrer avec : ansible-vault encrypt vault.yml
+#
+# Usage dans les playbooks :
+#   ansible-playbook site.yml --vault-password-file ~/.vault_pass
+
+# Clé SSH publique pour l'utilisateur devops (optionnel si gérée via ~/.ssh/authorized_keys)
+# vault_devops_ssh_public_key: "ssh-ed25519 AAAA... user@host"
+
+# Credentials PostgreSQL (S2 - HashiCorp Vault pour K8s)
+# vault_postgres_replication_password: "changeme"
+# vault_postgres_superuser_password: "changeme"
+
+# Token Scaleway API (pour le provisioning Terraform futur)
+# vault_scaleway_access_key: "SCWXXXXXXXXXXXXXXXXX"
+# vault_scaleway_secret_key: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"

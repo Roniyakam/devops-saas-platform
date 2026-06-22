@@ -1,0 +1,10 @@
+---
+# Variables du rôle k8s_worker — préfixées k8s_worker_*
+# k3s_version est définie dans group_vars/all.yml
+
+# Adresse IP du master (utilisée pour la jonction au cluster)
+# À surcharger en inventaire ou vault si nécessaire
+k8s_worker_master_ip: "{{ hostvars[groups['k8s_master'][0]]['ansible_host'] }}"
+
+# Port API K3s
+k8s_worker_k3s_api_port: "6443"

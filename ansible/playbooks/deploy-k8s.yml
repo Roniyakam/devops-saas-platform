@@ -1,0 +1,25 @@
+---
+# Déploiement cluster K3s - 3 plays ordonnés
+# IMPORTANT : l'ordre est critique (k8s_common → k8s_master → k8s_worker)
+# Usage : ansible-playbook -i inventories/scaleway/hosts.ini playbooks/deploy-k8s.yml -u root
+
+- name: Prérequis communs K8s (toutes les instances cluster)
+  hosts: k8s_cluster
+  become: true
+  gather_facts: true
+  roles:
+    - role: k8s_common
+
+- name: Déploiement control-plane K3s + ArgoCD
+  hosts: k8s_master
+  become: true
+  gather_facts: true
+  roles:
+    - role: k8s_master
+
+- name: Jonction worker au cluster K3s
+  hosts: k8s_workers
+  become: true
+  gather_facts: true
+  roles:
+    - role: k8s_worker

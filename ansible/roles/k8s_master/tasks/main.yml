@@ -1,0 +1,82 @@
+---
+# Rôle k8s_master : installation K3s control-plane + ArgoCD bootstrap
+
+- name: Vérifier si K3s est déjà installé
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k8s_master_k3s_binary
+  tags: [k8s_master, k3s]
+
+- name: Installer K3s control-plane
+  # --disable : services embarqués désactivés car déployés via GitOps (ArgoCD)
+  # Précédence Jinja2 : parenthèses obligatoires autour de la concaténation + filtre join
+  ansible.builtin.shell: |
+    curl -sfL https://get.k3s.io | \
+    INSTALL_K3S_VERSION="{{ k3s_version }}" \
+    sh -s - server \
+    --disable={{ ('--disable=' + (k8s_master_k3s_disable | join(','))) | regex_replace('^--disable=', '') }}
+  args:
+    creates: /usr/local/bin/k3s
+  when: not k8s_master_k3s_binary.stat.exists
+  tags: [k8s_master, k3s]
+
+- name: Attendre que le service K3s soit actif
+  ansible.builtin.systemd:
+    name: k3s
+    state: started
+    enabled: true
+  tags: [k8s_master, k3s]
+
+- name: Attendre que le nœud master soit Ready
+  ansible.builtin.command: k3s kubectl get nodes
+  register: k8s_master_nodes_status
+  until: "'Ready' in k8s_master_nodes_status.stdout"
+  retries: 20
+  delay: 10
+  changed_when: false
+  tags: [k8s_master, k3s]
+
+- name: Créer le répertoire local pour le kubeconfig
+  ansible.builtin.file:
+    path: "{{ k8s_master_kubeconfig_local_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+  tags: [k8s_master, kubeconfig]
+
+- name: Récupérer le kubeconfig en local
+  ansible.builtin.fetch:
+    src: "{{ k8s_master_kubeconfig_path }}"
+    dest: "{{ k8s_master_kubeconfig_local_dir }}/{{ inventory_hostname }}-k3s.yaml"
+    flat: true
+  tags: [k8s_master, kubeconfig]
+
+- name: Récupérer le token K3s pour les workers
+  ansible.builtin.slurp:
+    src: /var/lib/rancher/k3s/server/node-token
+  register: k8s_master_node_token_raw
+  tags: [k8s_master, k3s]
+
+- name: Stocker le token K3s dans les facts (accessible aux workers)
+  ansible.builtin.set_fact:
+    k3s_node_token: "{{ k8s_master_node_token_raw.content | b64decode | trim }}"
+  tags: [k8s_master, k3s]
+
+- name: Créer le namespace ArgoCD
+  ansible.builtin.command: >
+    k3s kubectl create namespace {{ k8s_master_argocd_namespace }}
+  register: k8s_master_argocd_ns
+  changed_when: "'created' in k8s_master_argocd_ns.stdout"
+  failed_when:
+    - k8s_master_argocd_ns.rc != 0
+    - "'already exists' not in k8s_master_argocd_ns.stderr"
+  tags: [k8s_master, argocd]
+
+- name: Déployer ArgoCD (version pinnée)
+  ansible.builtin.command: >
+    k3s kubectl apply -n {{ k8s_master_argocd_namespace }}
+    -f https://raw.githubusercontent.com/argoproj/argo-cd/{{ k8s_master_argocd_version }}/manifests/install.yaml
+  register: k8s_master_argocd_deploy
+  changed_when: "'configured' in k8s_master_argocd_deploy.stdout or 'created' in k8s_master_argocd_deploy.stdout"
+  tags: [k8s_master, argocd]

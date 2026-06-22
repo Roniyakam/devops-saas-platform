@@ -1,0 +1,8 @@
+---
+# Variables partagées entre tous les rôles
+# k3s_version est une exception documentée au préfixage : variable de domaine
+# partagée entre k8s_master et k8s_worker (voir .ansible-lint)
+k3s_version: "v1.29.4+k3s1"
+
+# Timezone commune à toutes les instances
+common_timezone: "Europe/Paris"

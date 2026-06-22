@@ -1,0 +1,9 @@
+---
+# Variables du rôle k8s_common — préfixées k8s_common_*
+# k3s_version est définie dans group_vars/all.yml (variable de domaine partagée)
+
+# Image de container runtime (containerd via K3s, pas de version séparée)
+k8s_common_container_runtime: "containerd"
+
+# Répertoire des manifestes K8s statiques (non utilisé avec K3s, présent pour référence)
+k8s_common_manifests_dir: "/var/lib/rancher/k3s/server/manifests"

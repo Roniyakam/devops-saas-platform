@@ -1,0 +1,44 @@
+---
+# Variables du rôle common — toutes préfixées common_*
+
+# Paquets système à installer sur toutes les instances
+common_packages:
+  - vim
+  - curl
+  - wget
+  - git
+  - htop
+  - net-tools
+  - ca-certificates
+  - gnupg
+  - apt-transport-https
+  - software-properties-common
+  - python3-pip
+  - unattended-upgrades
+
+# Timezone
+common_timezone: "Europe/Paris"
+
+# Utilisateur de service créé sur chaque instance
+common_service_user: "devops"
+common_service_user_shell: "/bin/bash"
+
+# Clé SSH publique à déployer pour l'utilisateur devops
+# Remplacer par le chemin réel ou définir en tant que vault variable
+common_devops_ssh_public_key_path: "~/.ssh/id_ed25519.pub"
+
+# Ports ouverts dans UFW
+# IMPORTANT : ces règles sont appliquées AVANT l'activation d'UFW (ordre critique)
+common_ufw_allow_ports:
+  - { port: "22", proto: "tcp", comment: "SSH" }
+
+# Réseaux privés Scaleway autorisés (communication inter-instances)
+common_ufw_allow_networks:
+  - { src: "10.0.0.0/8", comment: "Réseau privé Scaleway" }
+
+# Sysctl — fichier dédié pour garantir la priorité maximale
+common_sysctl_file: "/etc/sysctl.d/99-k8s-platform.conf"
+common_sysctl_params:
+  net.ipv4.ip_forward: 1
+  net.bridge.bridge-nf-call-iptables: 1
+  net.bridge.bridge-nf-call-ip6tables: 1

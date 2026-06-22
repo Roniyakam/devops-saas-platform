@@ -1,0 +1,12 @@
+---
+# Variables partagées entre tous les rôles
+# Ce fichier est chargé automatiquement par Ansible depuis le répertoire group_vars
+# adjacent au playbook ou à l'inventaire.
+
+# k3s_version : exception documentée au préfixage par rôle
+# Variable de domaine partagée entre k8s_master et k8s_worker
+# Voir ansible/.ansible-lint pour l'explication complète
+k3s_version: "v1.29.4+k3s1"
+
+# Timezone commune à toutes les instances
+common_timezone: "Europe/Paris"

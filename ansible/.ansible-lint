@@ -1,0 +1,19 @@
+---
+# Configuration ansible-lint — profil production
+# 0 failure toléré, c'est une gate de qualité
+
+profile: production
+
+# Exclusion documentée : k3s_version est intentionnellement sans préfixe de rôle.
+# C'est une variable de domaine partagée entre k8s_master et k8s_worker.
+# Un préfixe forcerait la duplication (k8s_master_k3s_version = k8s_worker_k3s_version),
+# ce qui serait plus verbeux sans apport de clarté.
+var_naming_pattern: "^[a-z_][a-z0-9_]*$"
+
+skip_list:
+  # k3s_version : exception documentée (variable de domaine partagée)
+  - "var-naming[no-role-prefix]"
+
+exclude_paths:
+  - .git/
+  - fetched/

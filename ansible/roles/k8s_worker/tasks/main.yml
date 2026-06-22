@@ -1,0 +1,27 @@
+---
+# Rôle k8s_worker : jonction de l'instance au cluster K3s existant
+
+- name: Vérifier si K3s agent est déjà installé
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k8s_worker_k3s_binary
+  tags: [k8s_worker, k3s]
+
+- name: Joindre le worker au cluster K3s
+  ansible.builtin.shell: |
+    curl -sfL https://get.k3s.io | \
+    INSTALL_K3S_VERSION="{{ k3s_version }}" \
+    K3S_URL="https://{{ k8s_worker_master_ip }}:{{ k8s_worker_k3s_api_port }}" \
+    K3S_TOKEN="{{ hostvars[groups['k8s_master'][0]]['k3s_node_token'] }}" \
+    sh -s - agent
+  args:
+    creates: /usr/local/bin/k3s
+  when: not k8s_worker_k3s_binary.stat.exists
+  tags: [k8s_worker, k3s]
+
+- name: Démarrer et activer le service K3s agent
+  ansible.builtin.systemd:
+    name: k3s-agent
+    state: started
+    enabled: true
+  tags: [k8s_worker, k3s]

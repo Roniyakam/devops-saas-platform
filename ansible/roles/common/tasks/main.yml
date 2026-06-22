@@ -1,0 +1,107 @@
+---
+# Rôle common : socle système commun à toutes les instances
+# Bugs corrigés :
+# - UFW : règles allow AVANT state:enabled (ordre critique)
+# - UFW idempotence : garde-fou ufw status + when: inactive
+# - sysctl : fichier dédié 99-k8s-platform.conf (priorité max)
+
+- name: Mettre à jour le cache apt
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  tags: [common, packages]
+
+- name: Installer les paquets système essentiels
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+  tags: [common, packages]
+
+- name: Configurer la timezone
+  community.general.timezone:
+    name: "{{ common_timezone }}"
+  tags: [common, timezone]
+
+- name: Synchroniser l'horloge matérielle
+  ansible.builtin.command: hwclock --systohc
+  changed_when: false
+  tags: [common, timezone]
+
+- name: Créer l'utilisateur de service
+  ansible.builtin.user:
+    name: "{{ common_service_user }}"
+    shell: "{{ common_service_user_shell }}"
+    groups: sudo
+    append: true
+    create_home: true
+    state: present
+  tags: [common, users]
+
+- name: Déployer la clé SSH pour l'utilisateur de service
+  ansible.posix.authorized_key:
+    user: "{{ common_service_user }}"
+    state: present
+    key: "{{ lookup('file', common_devops_ssh_public_key_path) }}"
+  when: common_devops_ssh_public_key_path != ""
+  tags: [common, users, ssh]
+
+- name: Charger les modules kernel requis pour K8s (br_netfilter, overlay)
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+    persistent: present
+  loop:
+    - br_netfilter
+    - overlay
+  tags: [common, kernel]
+
+- name: Configurer les paramètres sysctl dans un fichier dédié
+  # Fichier dédié 99-k8s-platform.conf = priorité max dans /etc/sysctl.d/
+  # Evite les conflits avec d'autres confs système (systemd-sysctl, etc.)
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: "{{ common_sysctl_file }}"
+    reload: true
+    state: present
+  loop: "{{ common_sysctl_params | dict2items }}"
+  tags: [common, kernel, sysctl]
+
+# UFW — ORDRE CRITIQUE : allow rules TOUJOURS avant state: enabled
+# Si on active UFW avant d'ouvrir le port 22, la connexion Ansible est coupée
+
+- name: UFW - Autoriser SSH (port 22) avant activation
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+    comment: "{{ item.comment }}"
+  loop: "{{ common_ufw_allow_ports }}"
+  tags: [common, firewall]
+
+- name: UFW - Autoriser les réseaux privés Scaleway
+  community.general.ufw:
+    rule: allow
+    src: "{{ item.src }}"
+    comment: "{{ item.comment }}"
+  loop: "{{ common_ufw_allow_networks }}"
+  tags: [common, firewall]
+
+- name: UFW - Vérifier l'état actuel (garde-fou idempotence)
+  # Bug connu : community.general.ufw state:enabled remonte changed même si UFW
+  # est déjà actif. Solution : vérifier l'état réel avant d'appeler le module.
+  ansible.builtin.command: ufw status
+  become: true
+  register: common_ufw_status
+  changed_when: false
+  check_mode: false
+  tags: [common, firewall]
+
+- name: UFW - Activer avec politique par défaut deny incoming (toujours en dernier)
+  community.general.ufw:
+    state: enabled
+    policy: deny
+    direction: incoming
+  become: true
+  when: "'inactive' in common_ufw_status.stdout"
+  tags: [common, firewall]
