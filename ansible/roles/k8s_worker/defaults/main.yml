@@ -11,3 +11,8 @@ k8s_worker_k3s_api_port: "6443"
 
 # Chemin local du script d'installation K3s téléchargé (get_url)
 k8s_worker_k3s_install_script_path: "/tmp/k3s-install.sh"
+
+# Fichier de configuration persistant de l'agent K3s
+# Source de vérité relue par k3s-agent à chaque démarrage du service
+# (contrairement aux variables d'environnement, figées au moment de l'install)
+k8s_worker_k3s_agent_config_path: "/etc/rancher/k3s/config.yaml"
