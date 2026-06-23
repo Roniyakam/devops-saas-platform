@@ -32,7 +32,25 @@ vault_k8s_secrets_roles:
   - rabbitmq
   - celery
   - postgres
-vault_k8s_role_sa_namespace: "default"
+
+# Liaison SA/namespace par rôle d'authentification kubernetes — chaque
+# composant vit dans son propre namespace GitOps, donc le binding ne peut pas
+# être un unique namespace global (l'ancien vault_k8s_role_sa_namespace
+# unique cassait silencieusement le login pour tout composant hors
+# "default"). rabbitmq et postgres restent sur "default" en attendant leur
+# propre migration (rabbitmq n'utilise pas encore l'injection Vault ;
+# postgres est prévu S3) : changer leur binding sans les migrer en même temps
+# casserait un login qui ne fonctionne pas encore aujourd'hui.
+vault_k8s_role_bindings:
+  rabbitmq:
+    sa_name: rabbitmq
+    namespace: default
+  celery:
+    sa_name: celery-sa
+    namespace: celery
+  postgres:
+    sa_name: postgres
+    namespace: default
 vault_k8s_role_ttl: "1h"
 
 # Chemin local du kubeconfig K3s — importé depuis le rôle k8s_master

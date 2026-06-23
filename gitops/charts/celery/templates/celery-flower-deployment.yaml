@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-flower
+  labels:
+    app.kubernetes.io/name: celery-flower
+spec:
+  replicas: {{ .Values.flower.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: celery-flower
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: celery-flower
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: {{ .Values.vault.role }}
+        vault.hashicorp.com/agent-inject-secret-rabbitmq: {{ .Values.vault.secretPath }}
+        vault.hashicorp.com/agent-inject-template-rabbitmq: |
+          {{ `{{- with secret "` }}{{ .Values.vault.secretPath }}{{ `" -}}` }}
+          CELERY_BROKER_URL=amqp://{{ `{{ .Data.data.username }}` }}:{{ `{{ .Data.data.password }}` }}@{{ .Values.rabbitmq.host }}:{{ .Values.rabbitmq.port }}/
+          {{ `{{- end }}` }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      containers:
+        - name: celery-flower
+          image: "{{ .Values.flower.image.repository }}@{{ .Values.flower.image.digest }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              source /vault/secrets/rabbitmq
+              exec flower --broker="$CELERY_BROKER_URL" --port={{ .Values.flower.port }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.flower.port }}
+          resources:
+            requests:
+              memory: {{ .Values.flower.resources.requests.memory }}
+              cpu: {{ .Values.flower.resources.requests.cpu }}
+            limits:
+              memory: {{ .Values.flower.resources.limits.memory }}
+              cpu: {{ .Values.flower.resources.limits.cpu }}

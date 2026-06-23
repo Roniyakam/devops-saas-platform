@@ -1,0 +1,46 @@
+# Aucun secret ici : les identifiants RabbitMQ sont injectés à l'exécution
+# par le Vault Agent Injector (voir vault.role / vault.secretPath ci-dessous
+# et les annotations dans les templates de Deployment).
+
+vault:
+  role: celery
+  secretPath: secret/data/celery/rabbitmq
+
+rabbitmq:
+  host: rabbitmq.rabbitmq.svc.cluster.local
+  port: 5672
+
+serviceAccountName: celery-sa
+
+worker:
+  replicas: 2
+  image:
+    # python:3.12-slim — digest résolu en tirant l'image sur le cluster K3s
+    # (aucun outil de résolution de digest disponible localement).
+    repository: docker.io/library/python
+    tag: "3.12-slim"
+    digest: "sha256:d764629ce0ddd8c71fd371e9901efb324a95789d2315a47db7e4d27e78f1b0e9"
+  celeryVersion: "5.4.0"
+  concurrency: 2
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 256Mi
+      cpu: 200m
+
+flower:
+  replicas: 1
+  image:
+    repository: docker.io/mher/flower
+    tag: "2.0.1"
+    digest: "sha256:51c3c3db5be343e6335e3dbca5348708932bbcca992df6a39f1dad91e3b340df"
+  port: 5555
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 50m
+    limits:
+      memory: 128Mi
+      cpu: 100m

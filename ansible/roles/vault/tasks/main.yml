@@ -180,10 +180,12 @@
 
 # --- Policies Vault read-only par secret engine (rabbitmq, celery, postgres) ---
 # Limitation connue : le pattern lecture-avant-écriture détecte l'absence
-# d'une policy/d'un rôle mais pas la dérive de contenu (Vault CLI n'a pas
-# d'équivalent à "kubectl diff"). Si vault_k8s_role_ttl change, un rôle déjà
-# créé ne sera pas mis à jour automatiquement — acceptable pour ce
-# portfolio, à corriger ultérieurement si nécessaire (S2+).
+# d'une policy mais pas la dérive de contenu (Vault CLI n'a pas d'équivalent
+# à "kubectl diff"). Si une policy déjà créée doit changer de contenu, elle
+# ne sera pas mise à jour automatiquement — acceptable pour ce portfolio, à
+# corriger ultérieurement si nécessaire (S2+). Les rôles d'authentification
+# kubernetes ci-dessous n'ont pas cette limitation : leur liaison SA/namespace
+# est revérifiée à chaque run (voir vault_k8s_role_json_before).
 
 - name: Lire les policies Vault existantes
   ansible.builtin.command: >-
@@ -214,6 +216,10 @@
   tags: [vault, policy]
 
 # --- Rôles d'authentification kubernetes liés aux policies ---
+# Les 3 tâches ci-dessous bouclent toutes sur vault_k8s_secrets_roles (liste
+# de noms simples) et se croisent par valeur (selectattr sur le nom du rôle)
+# plutôt que par position : plus robuste qu'un index_var partagé entre
+# tâches, et chaque résultat reste lisible indépendamment de l'ordre.
 
 - name: Lire les rôles d'authentification kubernetes existants
   ansible.builtin.command: >-
@@ -227,17 +233,46 @@
   failed_when: false
   tags: [vault, auth]
 
-- name: Créer les rôles d'authentification kubernetes liés aux policies
+# Lecture structurée (JSON) de la liaison SA/namespace des rôles existants :
+# contrairement au simple test d'existence ci-dessus, ceci permet de détecter
+# une dérive de binding (ex. rôle créé avant l'introduction de
+# vault_k8s_role_bindings, encore lié à l'ancien namespace par défaut) et de
+# corriger le rôle plutôt que de le laisser obsolète indéfiniment.
+- name: Lire le détail JSON des rôles existants (détection de dérive SA/namespace)
   ansible.builtin.command: >-
     kubectl exec -n {{ vault_namespace }} {{ vault_release_name }}-0 --
-    vault write auth/kubernetes/role/{{ item.item }}
-    bound_service_account_names={{ item.item }}
-    bound_service_account_namespaces={{ vault_k8s_role_sa_namespace }}
-    policies={{ item.item }}
-    ttl={{ vault_k8s_role_ttl }}
-  loop: "{{ vault_k8s_role_read_before.results }}"
+    vault read -format=json auth/kubernetes/role/{{ item }}
+  loop: "{{ vault_k8s_secrets_roles }}"
   loop_control:
-    label: "{{ item.item }}"
-  when: item.rc != 0
+    label: "{{ item }}"
+  register: vault_k8s_role_json_before
+  when: (vault_k8s_role_read_before.results | selectattr('item', 'equalto', item) | first).rc == 0
+  changed_when: false
+  failed_when: false
+  check_mode: false  # lecture pure, sans effet : sûre à exécuter même en --check
+  tags: [vault, auth]
+
+- name: Créer ou corriger les rôles d'authentification kubernetes liés aux policies
+  ansible.builtin.command: >-
+    kubectl exec -n {{ vault_namespace }} {{ vault_release_name }}-0 --
+    vault write auth/kubernetes/role/{{ item }}
+    bound_service_account_names={{ vault_k8s_role_bindings[item].sa_name }}
+    bound_service_account_namespaces={{ vault_k8s_role_bindings[item].namespace }}
+    policies={{ item }}
+    ttl={{ vault_k8s_role_ttl }}
+  loop: "{{ vault_k8s_secrets_roles }}"
+  loop_control:
+    label: "{{ item }}"
+  vars:
+    vault_k8s_role_json_current: "{{ (vault_k8s_role_json_before.results | selectattr('item', 'equalto', item) | first) }}"
+    vault_k8s_role_data_current: "{{ vault_k8s_role_json_current.stdout | default('{}') | from_json
+      if (vault_k8s_role_json_current.stdout | default('')) else {'data': {}} }}"
+  when: >-
+    (vault_k8s_role_read_before.results | selectattr('item', 'equalto', item) | first).rc != 0 or
+    (vault_k8s_role_json_current.rc | default(1)) != 0 or
+    (vault_k8s_role_data_current.data.bound_service_account_names | default([]))
+      != [vault_k8s_role_bindings[item].sa_name] or
+    (vault_k8s_role_data_current.data.bound_service_account_namespaces | default([]))
+      != [vault_k8s_role_bindings[item].namespace]
   changed_when: true
   tags: [vault, auth]

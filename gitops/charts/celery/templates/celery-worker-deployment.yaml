@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker
+  labels:
+    app.kubernetes.io/name: celery-worker
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: celery-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: celery-worker
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: {{ .Values.vault.role }}
+        vault.hashicorp.com/agent-inject-secret-rabbitmq: {{ .Values.vault.secretPath }}
+        vault.hashicorp.com/agent-inject-template-rabbitmq: |
+          {{ `{{- with secret "` }}{{ .Values.vault.secretPath }}{{ `" -}}` }}
+          CELERY_BROKER_URL=amqp://{{ `{{ .Data.data.username }}` }}:{{ `{{ .Data.data.password }}` }}@{{ .Values.rabbitmq.host }}:{{ .Values.rabbitmq.port }}/
+          {{ `{{- end }}` }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      initContainers:
+        - name: write-tasks
+          image: "{{ .Values.worker.image.repository }}@{{ .Values.worker.image.digest }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              cat > /app/tasks.py <<'PYEOF'
+              import os
+
+              from celery import Celery
+
+              app = Celery(
+                  "tasks",
+                  broker=os.environ.get("CELERY_BROKER_URL", "amqp://guest:guest@localhost:5672/"),
+              )
+
+
+              @app.task
+              def add(x, y):
+                  return x + y
+              PYEOF
+          volumeMounts:
+            - name: app
+              mountPath: /app
+      containers:
+        - name: celery-worker
+          image: "{{ .Values.worker.image.repository }}@{{ .Values.worker.image.digest }}"
+          workingDir: /app
+          command:
+            - /bin/sh
+            - -c
+            - |
+              pip install celery=={{ .Values.worker.celeryVersion }} --quiet
+              source /vault/secrets/rabbitmq
+              celery -A tasks worker --loglevel=info --concurrency={{ .Values.worker.concurrency }}
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - source /vault/secrets/rabbitmq && celery -A tasks inspect ping
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests:
+              memory: {{ .Values.worker.resources.requests.memory }}
+              cpu: {{ .Values.worker.resources.requests.cpu }}
+            limits:
+              memory: {{ .Values.worker.resources.limits.memory }}
+              cpu: {{ .Values.worker.resources.limits.cpu }}
+          volumeMounts:
+            - name: app
+              mountPath: /app
+      volumes:
+        - name: app
+          emptyDir: {}

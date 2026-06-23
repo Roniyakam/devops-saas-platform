@@ -1,0 +1,8 @@
+apiVersion: v2
+name: celery
+description: >-
+  Celery workers + Flower dashboard, consommant RabbitMQ avec des
+  identifiants injectés par Vault Agent (voir gitops/apps/celery). Namespace
+  "celery" entièrement géré par GitOps, sans aucune ressource Ansible.
+type: application
+version: 0.1.0
