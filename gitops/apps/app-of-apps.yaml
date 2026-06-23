@@ -1,0 +1,29 @@
+# Application racine du pattern App-of-Apps : ArgoCD découvre et synchronise
+# tous les manifestes Application sous gitops/apps/ (y compris ce fichier
+# lui-même — auto-référence intentionnelle, sans effet car idempotente).
+# directory.recurse est obligatoire : vault/ et rabbitmq/ sont des
+# sous-dossiers de gitops/apps/, qu'ArgoCD ne parcourt pas par défaut.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devops-saas-apps
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Roniyakam/devops-saas-platform
+    targetRevision: main
+    path: gitops/apps
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

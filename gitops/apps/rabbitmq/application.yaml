@@ -1,0 +1,38 @@
+# Chart sourcé directement depuis Bitnami (version pinnée) — pattern ArgoCD
+# standard, plus fiable qu'un chart wrapper local pour ce composant. Le
+# mirroir de ces valeurs existe dans gitops/charts/rabbitmq/ pour traçabilité
+# uniquement (voir Chart.yaml dans ce dossier).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: rabbitmq
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.bitnami.com/bitnami
+    chart: rabbitmq
+    targetRevision: "14.6.6"
+    helm:
+      values: |
+        auth:
+          username: rabbitmq
+          # Placeholder en clair — remplacé par un secret HashiCorp Vault en S3.
+          password: changeme-replaced-by-vault-in-s3
+        persistence:
+          enabled: false
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: rabbitmq
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

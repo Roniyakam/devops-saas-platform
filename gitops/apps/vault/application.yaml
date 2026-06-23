@@ -1,0 +1,28 @@
+# Vault est aujourd'hui déployé et configuré par ansible/roles/vault (Helm
+# lancé directement depuis Ansible, voir ansible/playbooks/deploy-vault.yml).
+# Cette Application ArgoCD est préparée en avance de la migration full-GitOps
+# prévue en S3 : elle pointe vers un chart vide (gitops/charts/vault), donc
+# son sync ne touche aucune ressource et n'entre pas en conflit avec
+# l'installation gérée par Ansible.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Roniyakam/devops-saas-platform
+    targetRevision: main
+    path: gitops/charts/vault
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vault
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
