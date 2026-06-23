@@ -30,8 +30,8 @@ spec:
             - /bin/sh
             - -c
             - |
-              source /vault/secrets/rabbitmq
-              exec flower --broker="$CELERY_BROKER_URL" --port={{ .Values.flower.port }}
+              . /vault/secrets/rabbitmq && \
+              exec python3 -m flower --broker="$CELERY_BROKER_URL" flower --port={{ .Values.flower.port }}
           ports:
             - name: http
               containerPort: {{ .Values.flower.port }}
