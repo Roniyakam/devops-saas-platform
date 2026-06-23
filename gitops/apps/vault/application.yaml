@@ -1,9 +1,17 @@
 # Vault est aujourd'hui déployé et configuré par ansible/roles/vault (Helm
 # lancé directement depuis Ansible, voir ansible/playbooks/deploy-vault.yml).
 # Cette Application ArgoCD est préparée en avance de la migration full-GitOps
-# prévue en S3 : elle pointe vers un chart vide (gitops/charts/vault), donc
-# son sync ne touche aucune ressource et n'entre pas en conflit avec
-# l'installation gérée par Ansible.
+# prévue en S3 : elle pointe vers un chart placeholder (gitops/charts/vault).
+#
+# IMPORTANT — pas de syncPolicy.automated ici, volontairement, tant que la
+# migration S3 n'est pas faite : le tracking de ressources d'ArgoCD est basé
+# sur le label app.kubernetes.io/instance=vault, identique au nom du release
+# Helm "vault" posé par Ansible dans le même namespace "vault". Un sync
+# automatisé avec prune:true a déjà supprimé le StatefulSet et le Deployment
+# de l'injector gérés par Ansible (incident constaté le 2026-06-23) car
+# ArgoCD les considère comme des ressources "à lui" non présentes dans le
+# manifeste désiré. Ne réactiver l'automatisation qu'après la vraie migration
+# S3 (quand ArgoCD devient l'unique propriétaire des ressources Vault).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -21,8 +29,5 @@ spec:
     server: https://kubernetes.default.svc
     namespace: vault
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
