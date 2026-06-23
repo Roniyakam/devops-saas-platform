@@ -1,0 +1,13 @@
+apiVersion: v2
+name: rabbitmq
+description: >-
+  Version-pinning record only — see gitops/apps/rabbitmq/application.yaml,
+  which sources the chart directly from Bitnami today (not from this local
+  chart). Keep the dependency version below in sync with the Application's
+  targetRevision when bumping.
+type: application
+version: 0.1.0
+dependencies:
+  - name: rabbitmq
+    version: "14.6.6"
+    repository: https://charts.bitnami.com/bitnami

@@ -1,0 +1,16 @@
+# Mirroir des valeurs inline (spec.source.helm.values) de
+# gitops/apps/rabbitmq/application.yaml — non consommé par ArgoCD
+# aujourd'hui, voir Chart.yaml dans ce même dossier. Garder synchronisé avec
+# l'Application en cas de changement.
+rabbitmq:
+  auth:
+    username: rabbitmq
+    # Placeholder en clair — remplacé par un secret HashiCorp Vault en S3
+    # (voir CLAUDE.md, règle "SECRETS"). Jamais de mot de passe réel ici.
+    password: changeme-replaced-by-vault-in-s3
+  persistence:
+    enabled: false
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m

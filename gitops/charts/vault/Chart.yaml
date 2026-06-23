@@ -1,0 +1,13 @@
+apiVersion: v2
+name: vault
+description: >-
+  Placeholder chart for the future GitOps-managed Vault deployment (S3
+  migration). Vault is currently deployed and configured by
+  ansible/roles/vault (Helm invoked directly from Ansible, see
+  ansible/playbooks/deploy-vault.yml). This chart intentionally has no
+  dependencies and no templates: the vault Application
+  (gitops/apps/vault/application.yaml) points here so ArgoCD can sync an
+  empty, valid release without conflicting with the Ansible-managed
+  installation.
+type: application
+version: 0.1.0

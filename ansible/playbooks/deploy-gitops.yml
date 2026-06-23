@@ -1,0 +1,43 @@
+---
+# Déploiement GitOps : applique l'Application racine ArgoCD (App-of-Apps).
+# ArgoCD découvre ensuite lui-même vault et rabbitmq sous gitops/apps/ (S2).
+# Prérequis : playbooks/deploy-k8s.yml déjà exécuté (kubeconfig dans
+# fetched/, ArgoCD installé par le rôle k8s_master)
+# Usage : ansible-playbook -i inventories/scaleway/hosts.ini playbooks/deploy-gitops.yml
+
+- name: Déploiement GitOps - Application racine ArgoCD (App-of-Apps)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../roles/k8s_master/defaults/main.yml
+  vars:
+    gitops_kubeconfig_path: >-
+      {{ k8s_master_kubeconfig_local_dir }}/{{ hostvars[groups['k8s_master'][0]].inventory_hostname }}-k3s.yaml
+    gitops_app_of_apps_manifest: "{{ playbook_dir }}/../../gitops/apps/app-of-apps.yaml"
+    gitops_app_of_apps_name: devops-saas-apps
+    gitops_sync_timeout: "120s"
+  environment:
+    KUBECONFIG: "{{ gitops_kubeconfig_path }}"
+  tasks:
+    - name: Calculer le diff de l'Application racine par rapport au cluster
+      ansible.builtin.command: >-
+        kubectl diff -n argocd -f {{ gitops_app_of_apps_manifest }}
+      register: gitops_app_of_apps_diff
+      changed_when: gitops_app_of_apps_diff.rc == 1
+      failed_when: gitops_app_of_apps_diff.rc > 1
+      tags: [gitops]
+
+    - name: Appliquer l'Application racine (App-of-Apps) si des changements sont détectés
+      ansible.builtin.command: >-
+        kubectl apply -n argocd -f {{ gitops_app_of_apps_manifest }}
+      when: gitops_app_of_apps_diff.rc == 1
+      changed_when: true
+      tags: [gitops]
+
+    - name: Attendre que l'Application racine soit synchronisée
+      ansible.builtin.command: >-
+        kubectl wait application/{{ gitops_app_of_apps_name }} -n argocd
+        --for=jsonpath='{.status.sync.status}'=Synced --timeout={{ gitops_sync_timeout }}
+      changed_when: false
+      tags: [gitops]
