@@ -17,6 +17,11 @@ spec:
     targetRevision: "14.6.6"
     helm:
       values: |
+        image:
+          # Bitnami a retiré les anciens tags de docker.io/bitnami/* (seul le tag
+          # "latest" y reste sur l'offre gratuite) : le tag pinné par le chart
+          # 14.6.6 (3.13.6-debian-12-r1) n'existe que sous bitnamilegacy/*.
+          repository: bitnamilegacy/rabbitmq
         auth:
           username: rabbitmq
           # Placeholder en clair — remplacé par un secret HashiCorp Vault en S3.

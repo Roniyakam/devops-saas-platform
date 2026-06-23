@@ -3,6 +3,10 @@
 # aujourd'hui, voir Chart.yaml dans ce même dossier. Garder synchronisé avec
 # l'Application en cas de changement.
 rabbitmq:
+  image:
+    # Tag pinné par le chart (3.13.6-debian-12-r1) retiré de docker.io/bitnami/* :
+    # disponible uniquement sous bitnamilegacy/* désormais.
+    repository: bitnamilegacy/rabbitmq
   auth:
     username: rabbitmq
     # Placeholder en clair — remplacé par un secret HashiCorp Vault en S3

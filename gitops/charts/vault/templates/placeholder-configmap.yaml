@@ -1,0 +1,13 @@
+# ArgoCD refuse un sync automatisé dont l'état cible est entièrement vide
+# ("auto-sync will wipe out all resources") : cette ConfigMap, sans aucun
+# effet applicatif, donne au chart une cible non vide pour que l'Application
+# vault reste synchronisable tout en gérant zéro ressource réelle.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-gitops-placeholder
+data:
+  status: >-
+    Vault est géré par ansible/roles/vault (Helm lancé depuis Ansible) en S2.
+    Cette Application ArgoCD est un placeholder pour la migration full-GitOps
+    prévue en S3.

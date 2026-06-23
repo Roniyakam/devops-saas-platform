@@ -5,9 +5,10 @@ description: >-
   migration). Vault is currently deployed and configured by
   ansible/roles/vault (Helm invoked directly from Ansible, see
   ansible/playbooks/deploy-vault.yml). This chart intentionally has no
-  dependencies and no templates: the vault Application
-  (gitops/apps/vault/application.yaml) points here so ArgoCD can sync an
-  empty, valid release without conflicting with the Ansible-managed
+  dependencies and renders only a no-op placeholder ConfigMap (see
+  templates/placeholder-configmap.yaml) — ArgoCD refuses automated sync on a
+  fully empty target, so a single harmless resource is required to keep the
+  vault Application syncable without touching the Ansible-managed
   installation.
 type: application
 version: 0.1.0
