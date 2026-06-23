@@ -1,0 +1,25 @@
+# Namespace "celery" entièrement géré par GitOps, sans aucune ressource
+# Ansible (contrairement à vault, voir incident 001) : automated + prune est
+# donc sûr ici dès le départ, pas de risque de collision avec Ansible/Helm.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: celery
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Roniyakam/devops-saas-platform
+    targetRevision: main
+    path: gitops/charts/celery
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: celery
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
