@@ -73,6 +73,28 @@ kubectl get nodes
 - sysctl : fichier dédié `/etc/sysctl.d/99-k8s-platform.conf` (priorité max,
   ne peut pas être écrasé par d'autres confs système)
 
+## Incidents et leçons apprises
+
+### Règle 001 — Namespace ownership (issu de incident 001)
+JAMAIS deux systèmes de gestion sur le même namespace Kubernetes.
+- Un namespace = un owner = soit Ansible/Helm, soit ArgoCD, jamais les deux
+- ArgoCD avec prune=true SUPPRIME tout ce qu'il ne connaît pas
+- Lors de migration Ansible → ArgoCD : désinstaller Ansible AVANT
+  d'activer ArgoCD sync (voir docs/incidents/001-argocd-prune-vault.md)
+
+### Règle 002 — ArgoCD automated sync avec prune
+Avant d'activer syncPolicy.automated + prune: true sur une Application :
+- Vérifier que AUCUNE autre source (Ansible, kubectl manuel) ne gère
+  des ressources dans ce namespace
+- Tester d'abord en manual-sync, vérifier l'état Synced/Healthy
+- Seulement ensuite activer automated + prune
+
+### Règle 003 — Validation post-déploiement obligatoire
+Après tout déploiement ArgoCD :
+kubectl get applications -n argocd  → tous Synced/Healthy
+kubectl get pods -n [namespace]     → tous Running
+Ne jamais considérer un déploiement terminé sans ces deux vérifications.
+
 ## Méthode de travail avec Claude Code
 
 1. CLAUDE.md est la source de vérité unique — le lire avant toute tâche.
