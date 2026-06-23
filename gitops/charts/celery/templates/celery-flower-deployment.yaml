@@ -19,7 +19,7 @@ spec:
         vault.hashicorp.com/agent-inject-secret-rabbitmq: {{ .Values.vault.secretPath }}
         vault.hashicorp.com/agent-inject-template-rabbitmq: |
           {{ `{{- with secret "` }}{{ .Values.vault.secretPath }}{{ `" -}}` }}
-          CELERY_BROKER_URL=amqp://{{ `{{ .Data.data.username }}` }}:{{ `{{ .Data.data.password }}` }}@{{ .Values.rabbitmq.host }}:{{ .Values.rabbitmq.port }}/
+          export CELERY_BROKER_URL=amqp://{{ `{{ .Data.data.username }}` }}:{{ `{{ .Data.data.password }}` }}@{{ .Values.rabbitmq.host }}:{{ .Values.rabbitmq.port }}/
           {{ `{{- end }}` }}
     spec:
       serviceAccountName: {{ .Values.serviceAccountName }}
