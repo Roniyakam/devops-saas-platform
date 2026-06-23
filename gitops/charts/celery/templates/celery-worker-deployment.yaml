@@ -56,15 +56,15 @@ spec:
             - /bin/sh
             - -c
             - |
-              pip install celery=={{ .Values.worker.celeryVersion }} --quiet
-              source /vault/secrets/rabbitmq
+              pip install celery=={{ .Values.worker.celeryVersion }} --quiet && \
+              . /vault/secrets/rabbitmq && \
               celery -A tasks worker --loglevel=info --concurrency={{ .Values.worker.concurrency }}
           readinessProbe:
             exec:
               command:
                 - /bin/sh
                 - -c
-                - source /vault/secrets/rabbitmq && celery -A tasks inspect ping
+                - . /vault/secrets/rabbitmq && celery -A tasks inspect ping
             initialDelaySeconds: 20
             periodSeconds: 15
           resources:
