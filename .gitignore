@@ -1,2 +1,3 @@
 ansible/inventories/scaleway/hosts.ini
 ansible/fetched/
+ansible/vault-init.yml

@@ -17,9 +17,29 @@ vault_chart_version: "0.28.1"
 vault_release_name: "vault"
 vault_namespace: "vault"
 
-# vault_dev_root_token : PAS de valeur par défaut ici — doit être fourni par
-# vault.yml chiffré (ansible-vault), voir vault.yml.example. Mode dev
-# uniquement (auto-unseal, token connu) — jamais utilisé en production.
+# Stockage Raft (Integrated Storage) — remplace le mode dev/inmem (S2+).
+# 1 seul replica : contrainte de portfolio (1 VM K3s worker), pas une
+# recommandation de prod. Cible prod : 5 replicas / 3 AZ — voir
+# docs/architecture.md.
+vault_ha_replicas: 1
+vault_raft_storage_size: "1Gi"
+vault_raft_storage_class: "local-path"
+vault_audit_storage_size: "1Gi"
+
+# Fichier local (non commité, voir .gitignore) contenant la clé de unseal et
+# le root token générés par "vault operator init" — chiffré avec
+# ansible-vault juste après écriture. Trop sensible pour être commité même
+# chiffré : sa perte rend Vault définitivement scellé (contrairement à
+# vault.yml, ses valeurs ne sont pas reproductibles).
+vault_init_file_path: "{{ playbook_dir }}/../vault-init.yml"
+
+# Fichier de mot de passe ansible-vault — même convention que documentée
+# dans tous les playbooks (--vault-password-file ~/.vault_pass).
+vault_init_vault_password_file: "~/.vault_pass"
+
+# Chemin local du fichier values.yaml rendu avant l'appel Helm (outillage,
+# pas une ressource gérée par GitOps).
+vault_values_rendered_path: "/tmp/vault-values-rendered.yaml"
 
 # Délai d'attente des pods (kubectl wait)
 vault_pod_ready_timeout: "120s"

@@ -1,0 +1,42 @@
+# Généré par ansible/roles/vault/tasks/main.yml — ne pas éditer à la main.
+#
+# Stockage Raft (Integrated Storage), 1 seul nœud : contrainte de portfolio
+# (1 seule VM K3s worker disponible), PAS une recommandation de production.
+# Cible production : server.ha.replicas: 5 répartis sur 3 zones de
+# disponibilité, retry_join avec une entrée par nœud, + stanza seal "awskms"
+# / "azurekeyvault" / "gcpckms" pour l'auto-unseal (voir docs/architecture.md).
+server:
+  dev:
+    enabled: false
+  standalone:
+    enabled: false
+  ha:
+    enabled: true
+    replicas: {{ vault_ha_replicas }}
+    raft:
+      enabled: true
+      setNodeId: true
+      config: |
+        ui = true
+        listener "tcp" {
+          tls_disable = 1
+          address = "[::]:8200"
+          cluster_address = "[::]:8201"
+        }
+        storage "raft" {
+          path = "/vault/data"
+          retry_join {
+            leader_api_addr = "http://{{ vault_release_name }}-0.{{ vault_release_name }}-internal:8200"
+          }
+        }
+        service_registration "kubernetes" {}
+  dataStorage:
+    enabled: true
+    size: {{ vault_raft_storage_size }}
+    storageClass: {{ vault_raft_storage_class }}
+  auditStorage:
+    enabled: true
+    size: {{ vault_audit_storage_size }}
+    storageClass: {{ vault_raft_storage_class }}
+injector:
+  enabled: true

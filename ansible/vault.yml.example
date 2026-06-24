@@ -12,8 +12,11 @@
 # vault_postgres_replication_password: "changeme"
 # vault_postgres_superuser_password: "changeme"
 
-# Root token Vault en mode dev (S2 - HashiCorp Vault, rôle vault)
-# vault_dev_root_token: "changeme"
+# Note : depuis la migration vers le stockage Raft, Vault ne dépend plus
+# d'un vault_dev_root_token (mode dev supprimé). Le root token et la clé de
+# unseal sont désormais générés par "vault operator init" et stockés dans
+# ansible/vault-init.yml (chiffré ansible-vault, non commité — voir
+# .gitignore et docs/architecture.md).
 
 # Token Scaleway API (pour le provisioning Terraform futur)
 # vault_scaleway_access_key: "SCWXXXXXXXXXXXXXXXXX"
