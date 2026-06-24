@@ -57,7 +57,8 @@ kubectl get nodes
 6. **SECRETS** : ansible-vault pour Ansible, Vault pour Kubernetes — stockage
    Raft uniquement, jamais inmem en production (voir docs/architecture.md).
    Jamais en clair dans Git. Voir vault.yml.example. Ne jamais commiter
-   `fetched/`, `vault-init.yml`, `vault-secrets.yml`.
+   `fetched/`, `vault-init.yml`, `vault-secrets.yml`, `hosts.ini` (IPs
+   réelles — éditer depuis `hosts.ini.example`, gitignored).
 
 7. **NAMESPACE OWNERSHIP** : un namespace K8s = un owner (Ansible/Helm OU
    ArgoCD, jamais les deux) — voir docs/incidents/.

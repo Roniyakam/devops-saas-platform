@@ -1,17 +1,17 @@
 [infra]
-vm-infra ansible_host=<IP_VM_INFRA>
+vm-infra ansible_host=INFRA_PUBLIC_IP
 
 [k8s_master]
-vm-k8s-master ansible_host=<IP_K8S_MASTER>
+vm-k8s-master ansible_host=K8S_MASTER_PUBLIC_IP
 
 [k8s_workers]
-vm-k8s-worker ansible_host=<IP_K8S_WORKER>
+vm-k8s-worker ansible_host=K8S_WORKER_PUBLIC_IP
 
 [postgres]
-vm-postgres ansible_host=<IP_POSTGRES>
+vm-postgres ansible_host=POSTGRES_PUBLIC_IP
 
 [monitoring]
-vm-monitoring ansible_host=<IP_MONITORING>
+vm-monitoring ansible_host=MONITORING_PUBLIC_IP
 
 [k8s_cluster:children]
 k8s_master
