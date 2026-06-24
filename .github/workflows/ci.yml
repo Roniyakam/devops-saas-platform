@@ -1,0 +1,79 @@
+---
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ansible-lint:
+    name: ansible-lint (profil production)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Install ansible-lint
+        run: pip install ansible-lint==24.9.2
+      - name: Run ansible-lint production profile
+        run: |
+          cd ansible
+          ansible-lint -f pep8 playbooks/site.yml playbooks/deploy-k8s.yml \
+            playbooks/deploy-vault.yml playbooks/deploy-gitops.yml
+        # Gate: 0 violation requise (profil production)
+
+  yaml-lint:
+    name: yaml-lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Lint all YAML files
+        run: |
+          pip install yamllint
+          yamllint -d relaxed ansible/ gitops/
+
+  secret-scan:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0 # historique complet requis par gitleaks
+      - name: Scan for secrets with gitleaks
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar xz
+          ./gitleaks detect --source . --verbose
+        # Échoue si un pattern de secret est détecté dans l'historique Git
+
+  security-summary:
+    name: Security gate summary
+    needs: [ansible-lint, yaml-lint, secret-scan]
+    runs-on: ubuntu-latest
+    if: always()
+    permissions:
+      contents: read
+    steps:
+      - name: Security gate summary
+        run: |
+          echo "=== CI Security Gate Results ==="
+          echo "ansible-lint: ${{ needs.ansible-lint.result }}"
+          echo "yaml-lint: ${{ needs.yaml-lint.result }}"
+          echo "secret-scan: ${{ needs.secret-scan.result }}"
+          if [[ "${{ needs.ansible-lint.result }}" != "success" ]] || \
+             [[ "${{ needs.secret-scan.result }}" != "success" ]]; then
+            echo "GATE FAILED - merge blocked"
+            exit 1
+          fi
+          echo "All gates passed"
