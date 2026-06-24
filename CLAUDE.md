@@ -54,46 +54,29 @@ kubectl get nodes
 
 5. **PAS DE `latest`** : toute version (K3s, Helm charts, images) est pinnée.
 
-6. **SECRETS** : ansible-vault pour Ansible, Vault (S2+) pour Kubernetes.
-   Jamais en clair dans Git. Voir vault.yml.example.
+6. **SECRETS** : ansible-vault pour Ansible, Vault pour Kubernetes — stockage
+   Raft uniquement, jamais inmem en production (voir docs/architecture.md).
+   Jamais en clair dans Git. Voir vault.yml.example. Ne jamais commiter
+   `fetched/`, `vault-init.yml`, `vault-secrets.yml`.
 
-## Bugs connus et corrections déjà appliquées
+7. **NAMESPACE OWNERSHIP** : un namespace K8s = un owner (Ansible/Helm OU
+   ArgoCD, jamais les deux) — voir docs/incidents/.
 
-- `community.general.ufw state:enabled` → changed à chaque run (bug module) :
-  corrigé via garde-fou `ufw status` + `when: 'inactive' in stdout`
+8. **CI GATES** : ansible-lint + gitleaks doivent passer avant tout merge
+   (voir .github/workflows/ci.yml).
 
-- `community.general` v12+ a supprimé `stdout_callback=yaml` :
-  corrigé → `stdout_callback=default` + `callback_result_format=yaml`
-
-- Image Scaleway Ubuntu 24.04 = `ubuntu_noble` (pas `ubuntu_jammy` = 22.04)
-
-- Précédence Jinja2 : toujours parenthéser `+` avec `|`
-  ex: `('--disable=' + (liste | join(',')))` et non `'--disable=' + liste | join(',')`
-
-- sysctl : fichier dédié `/etc/sysctl.d/99-k8s-platform.conf` (priorité max,
-  ne peut pas être écrasé par d'autres confs système)
+Détail complet : bugs connus → docs/known-issues.md · règles de sécurité →
+docs/security-rules.md · incidents → docs/incidents/.
 
 ## Incidents et leçons apprises
 
-### Règle 001 — Namespace ownership (issu de incident 001)
-JAMAIS deux systèmes de gestion sur le même namespace Kubernetes.
-- Un namespace = un owner = soit Ansible/Helm, soit ArgoCD, jamais les deux
-- ArgoCD avec prune=true SUPPRIME tout ce qu'il ne connaît pas
-- Lors de migration Ansible → ArgoCD : désinstaller Ansible AVANT
-  d'activer ArgoCD sync (voir docs/incidents/001-argocd-prune-vault.md)
-
-### Règle 002 — ArgoCD automated sync avec prune
-Avant d'activer syncPolicy.automated + prune: true sur une Application :
-- Vérifier que AUCUNE autre source (Ansible, kubectl manuel) ne gère
-  des ressources dans ce namespace
-- Tester d'abord en manual-sync, vérifier l'état Synced/Healthy
-- Seulement ensuite activer automated + prune
-
-### Règle 003 — Validation post-déploiement obligatoire
-Après tout déploiement ArgoCD :
-kubectl get applications -n argocd  → tous Synced/Healthy
-kubectl get pods -n [namespace]     → tous Running
-Ne jamais considérer un déploiement terminé sans ces deux vérifications.
+- Règle 001 — namespace ownership : ArgoCD prune=true supprime tout ce
+  qu'il ne connaît pas ; désinstaller Ansible avant d'activer ArgoCD sync
+  (incident 001 : docs/incidents/001-argocd-prune-vault.md).
+- Règle 002 — avant `syncPolicy.automated` + `prune: true` sur une
+  Application : valider d'abord en manual-sync (Synced/Healthy).
+- Règle 003 — après tout déploiement ArgoCD : `kubectl get applications -n
+  argocd` (Synced/Healthy) ET `kubectl get pods -n [namespace]` (Running).
 
 ## Méthode de travail avec Claude Code
 
@@ -102,8 +85,9 @@ Ne jamais considérer un déploiement terminé sans ces deux vérifications.
 2. Une tâche par prompt — la cadrer avec : objectif, périmètre, contraintes,
    validation attendue.
 
-3. Pour les changements touchant 3 fichiers ou plus : demander un plan
-   d'abord, aucune modification avant validation.
+3. Workflow Explore→Plan→Code→Commit obligatoire pour tout changement
+   touchant 2 fichiers ou plus : demander un plan d'abord, aucune
+   modification avant validation.
 
 4. Travailler par petites étapes : modifier → lint → test → commit → étape
    suivante.
@@ -129,20 +113,17 @@ Ne jamais considérer un déploiement terminé sans ces deux vérifications.
 
 ## Security rules (DevSecOps 2026)
 
-- Zero trust : aucune confiance implicite entre composants, mTLS pour les
-  communications service-to-service.
-- Secrets : ansible-vault pour la couche Ansible, HashiCorp Vault pour la
-  couche K8s.
-- Least privilege : chaque service account avec uniquement les permissions
-  minimales nécessaires.
-- Supply chain : toutes les images et charts vérifiées par checksum avant
-  utilisation.
-- Audit trail : chaque run Ansible journalisé, chaque action K8s uniquement
-  via ArgoCD.
-- Vulnerability scanning : prévu pour S3 (Trivy sur les images, kube-bench
-  sur le cluster).
-- Network segmentation : UFW sur toutes les VMs, NetworkPolicy sur les
-  namespaces K8s.
+Détail complet : docs/security-rules.md
+
+- Zero trust (mTLS service-to-service) · secrets via ansible-vault/Vault ·
+  least privilege par service account.
+- Supply chain : checksum sur images/charts ; signature cosign + SBOM
+  obligatoires avant S4.
+- Audit trail (runs Ansible journalisés, actions K8s via ArgoCD) ·
+  vulnerability scanning prévu S3 (Trivy, kube-bench) · network
+  segmentation (UFW + NetworkPolicy).
+- CI/CD : OIDC pour l'auth cloud, jamais de credentials long-lived ;
+  permissions `contents: read` minimum ; actions tierces pinnées par SHA.
 
 ## Plan d'exécution
 
