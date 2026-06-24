@@ -35,6 +35,7 @@ vm-monitoring  DEV1-M   Prometheus + Loki + Grafana
 # 1. Configurer l'inventaire
 cp ansible/inventories/scaleway/hosts.ini.example ansible/inventories/scaleway/hosts.ini
 # Éditer hosts.ini avec les IPs Scaleway réelles
+# hosts.ini est dans .gitignore : jamais commité (IPs réelles)
 
 # 2. Déployer le socle commun
 cd ansible
