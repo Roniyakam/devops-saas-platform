@@ -1,5 +1,5 @@
 ---
-# Déploiement HashiCorp Vault (mode dev) via Helm sur le cluster K3s existant
+# Déploiement HashiCorp Vault (stockage Raft) via Helm sur le cluster K3s existant
 # Prérequis : playbooks/deploy-k8s.yml déjà exécuté (kubeconfig dans fetched/)
 # et vault.yml chiffré présent (voir vault.yml.example)
 # Usage : ansible-playbook -i inventories/scaleway/hosts.ini playbooks/deploy-vault.yml --vault-password-file ~/.vault_pass
