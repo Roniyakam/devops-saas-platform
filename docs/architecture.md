@@ -23,3 +23,18 @@
   ne sont pas encore bootstrappés — aucun rôle/consommateur Postgres
   n'existe avant S3 (voir plan d'exécution, CLAUDE.md). À ajouter dans
   `playbooks/deploy-vault-secrets.yml` au moment du déploiement Postgres.
+
+## Port Architecture (PostgreSQL HA)
+
+| Port | Service    | Access        | Purpose                    |
+|------|------------|---------------|----------------------------|
+| 5432 | PostgreSQL | localhost only | Internal Patroni managed   |
+| 5433 | HAProxy    | K8s cluster   | Primary writes (health-checked) |
+| 5434 | HAProxy    | K8s cluster   | Replica reads (health-checked) |
+| 5010 | Patroni    | localhost      | Raft DCS consensus         |
+| 6432 | PgBouncer  | K8s cluster   | Connection pooling (recommended entry point) |
+| 8008 | Patroni API| vm-infra only  | Health checks, topology    |
+| 5000 | HAProxy    | vm-infra only  | Stats dashboard            |
+
+Note: Applications should connect via PgBouncer (6432), not directly
+to HAProxy or PostgreSQL.

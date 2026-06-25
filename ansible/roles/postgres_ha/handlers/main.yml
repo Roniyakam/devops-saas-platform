@@ -1,0 +1,23 @@
+---
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: Restart patroni
+  # En --check, les paquets/unités systemd associés sont simulés, pas réels.
+  ansible.builtin.systemd:
+    name: patroni
+    state: restarted
+  when: not ansible_check_mode
+
+- name: Restart haproxy
+  ansible.builtin.systemd:
+    name: haproxy
+    state: restarted
+  when: not ansible_check_mode
+
+- name: Restart pgbouncer
+  ansible.builtin.systemd:
+    name: pgbouncer
+    state: restarted
+  when: not ansible_check_mode

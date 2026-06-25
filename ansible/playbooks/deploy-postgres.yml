@@ -1,0 +1,51 @@
+---
+# Déploiement PostgreSQL HA (Patroni + HAProxy + PgBouncer) sur vm-postgres.
+# Nœud hors cluster K3s, géré uniquement par Ansible (incident 001).
+#
+# Le rôle a besoin du root token Vault (K8s) pour lire secret/postgres/superuser
+# et secret/postgres/app — voir playbooks/deploy-vault-secrets.yml qui les
+# bootstrappe au préalable. Le root token est lu depuis vault-init.yml
+# (chiffré ansible-vault, jamais commité — voir roles/vault/defaults/main.yml,
+# même mécanisme que deploy-vault-secrets.yml). C'est un credential de
+# bootstrap : tant qu'aucun Vault Agent / sidecar n'est configuré pour
+# vm-postgres, c'est Ansible qui porte ce rôle ; rotation prévue S4 quand
+# vm-postgres pourra s'authentifier directement auprès de Vault.
+#
+# Usage :
+#   ansible-playbook -i inventories/scaleway/hosts.ini playbooks/deploy-postgres.yml \
+#     --vault-password-file ~/.vault_pass
+
+- name: Déploiement PostgreSQL HA (Patroni + HAProxy + PgBouncer)
+  hosts: postgres
+  become: true
+  gather_facts: true
+  vars_files:
+    - "{{ playbook_dir }}/../roles/vault/defaults/main.yml"
+    - "{{ playbook_dir }}/../roles/k8s_master/defaults/main.yml"
+    - "{{ playbook_dir }}/../vault.yml"
+  environment:
+    KUBECONFIG: "{{ vault_kubeconfig_path }}"
+
+  pre_tasks:
+    - name: Lire vault-init.yml pour obtenir le root token Vault
+      ansible.builtin.command: >-
+        ansible-vault view
+        --vault-password-file {{ vault_init_vault_password_file | expanduser }}
+        {{ vault_init_file_path }}
+      register: postgres_ha_vault_init_content
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      no_log: true
+      when: not ansible_check_mode
+      tags: [postgres_ha, secrets]
+
+    - name: Extraire le root token et l'exposer au rôle
+      ansible.builtin.set_fact:
+        postgres_ha_vault_root_token: "{{ (postgres_ha_vault_init_content.stdout | from_json).root_token }}"
+      no_log: true
+      when: not ansible_check_mode
+      tags: [postgres_ha, secrets]
+
+  roles:
+    - role: postgres_ha

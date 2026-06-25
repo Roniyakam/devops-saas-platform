@@ -1,0 +1,9 @@
+---
+# Collections Ansible requises — versions pinnées (règle non négociable n°5)
+collections:
+  - name: community.general
+    version: "9.5.0"
+  - name: ansible.posix
+    version: "1.5.4"
+  - name: community.postgresql
+    version: "3.3.0"
