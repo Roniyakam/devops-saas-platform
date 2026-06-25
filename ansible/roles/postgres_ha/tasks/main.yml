@@ -1,0 +1,303 @@
+---
+# Rôle postgres_ha : PostgreSQL 16 + Patroni + HAProxy + PgBouncer (nœud
+# unique, vm-postgres — hors cluster K3s, voir incident 001).
+#
+# Ordre des tâches volontairement différent du brief initial : les secrets
+# Vault (mot de passe superuser/replication/app) sont récupérés AVANT le
+# rendu de patroni.yml, pas après. Patroni bootstrap PostgreSQL (initdb) au
+# premier démarrage avec le mot de passe présent dans sa config à cet
+# instant ; les récupérer après le bootstrap laisserait un mot de passe
+# superuser différent de celui stocké dans Vault.
+
+- name: Télécharger la clé GPG du dépôt PostgreSQL (pgdg)
+  ansible.builtin.get_url:
+    url: "{{ postgres_ha_pgdg_gpg_key_url }}"
+    dest: /tmp/postgresql-pgdg.asc
+    mode: "0644"
+  check_mode: false  # outillage local, pas un changement géré par GitOps (même pattern que roles/vault)
+  tags: [postgres_ha, repo]
+
+- name: Ajouter la clé GPG du dépôt PostgreSQL au trousseau apt
+  ansible.builtin.apt_key:
+    file: /tmp/postgresql-pgdg.asc
+    state: present
+  check_mode: false
+  tags: [postgres_ha, repo]
+
+- name: Ajouter le dépôt PostgreSQL (pgdg)
+  ansible.builtin.apt_repository:
+    repo: "{{ postgres_ha_pgdg_repo_line }}"
+    filename: pgdg
+    state: present
+  notify: Update apt cache
+  tags: [postgres_ha, repo]
+
+- name: Forcer l'exécution immédiate des handlers (cache apt à jour avant installation)
+  ansible.builtin.meta: flush_handlers
+  tags: [postgres_ha, repo]
+
+- name: Installer PostgreSQL {{ postgres_ha_version }}
+  ansible.builtin.apt:
+    name: "{{ postgres_ha_packages }}"
+    state: present
+  tags: [postgres_ha, packages]
+
+- name: Arrêter le service postgresql (Patroni gère le cluster à partir d'ici)
+  # En --check, le paquet ci-dessus n'est pas réellement installé : le
+  # service n'existe pas encore, donc rien à arrêter pour de vrai.
+  ansible.builtin.systemd:
+    name: postgresql
+    state: stopped
+    enabled: false
+  when: not ansible_check_mode
+  tags: [postgres_ha, packages]
+
+- name: Installer Patroni via pip
+  ansible.builtin.pip:
+    name: "patroni[raft]=={{ postgres_ha_patroni_version }}"
+    extra_args: "--break-system-packages"
+  tags: [postgres_ha, packages]
+
+- name: Installer HAProxy et PgBouncer
+  ansible.builtin.apt:
+    name: "{{ postgres_ha_haproxy_pgbouncer_packages }}"
+    state: present
+  tags: [postgres_ha, packages]
+
+# UFW — IP jamais en dur (règle non négociable n°6) : résolution dynamique
+# depuis l'inventaire, même pattern que k8s_common_ufw_cluster_hosts.
+
+- name: Déterminer les hosts autorisés à accéder à PostgreSQL/PgBouncer
+  ansible.builtin.set_fact:
+    postgres_ha_ufw_client_hosts: "{{ postgres_ha_ufw_client_groups | map('extract', groups) | sum(start=[]) | unique | list }}"
+  tags: [postgres_ha, firewall]
+
+- name: Déterminer les hosts autorisés à l'administration (API Patroni, stats HAProxy)
+  ansible.builtin.set_fact:
+    postgres_ha_ufw_admin_hosts: "{{ postgres_ha_ufw_admin_groups | map('extract', groups) | sum(start=[]) | unique | list }}"
+  tags: [postgres_ha, firewall]
+
+- name: Déterminer les hosts pairs autorisés sur le port Raft (consensus Patroni)
+  ansible.builtin.set_fact:
+    postgres_ha_ufw_peer_hosts: "{{ postgres_ha_ufw_peer_groups | map('extract', groups) | sum(start=[]) | unique | list }}"
+  tags: [postgres_ha, firewall]
+
+- name: UFW - Autoriser PostgreSQL/PgBouncer depuis les clients autorisés
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.0 }}"
+    proto: tcp
+    src: "{{ hostvars[item.1].ansible_host }}"
+    comment: "postgres_ha - {{ item.1 }}"
+  loop: "{{ [postgres_ha_haproxy_primary_port, postgres_ha_haproxy_replica_port, postgres_ha_pgbouncer_port] | product(postgres_ha_ufw_client_hosts) | list }}"
+  loop_control:
+    label: "{{ item.0 }}/tcp <- {{ item.1 }}"
+  tags: [postgres_ha, firewall]
+
+- name: UFW - Autoriser API Patroni et stats HAProxy depuis vm-infra uniquement
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.0 }}"
+    proto: tcp
+    src: "{{ hostvars[item.1].ansible_host }}"
+    comment: "postgres_ha admin - {{ item.1 }}"
+  loop: "{{ [postgres_ha_restapi_port, postgres_ha_haproxy_stats_port] | product(postgres_ha_ufw_admin_hosts) | list }}"
+  loop_control:
+    label: "{{ item.0 }}/tcp <- {{ item.1 }}"
+  tags: [postgres_ha, firewall]
+
+- name: UFW - Autoriser port Raft Patroni (DCS interne) entre nœuds du cluster
+  community.general.ufw:
+    rule: allow
+    port: "{{ postgres_ha_raft_port }}"
+    proto: tcp
+    src: "{{ hostvars[item].ansible_host }}"
+    comment: "postgres_ha raft - {{ item }}"
+  loop: "{{ postgres_ha_ufw_peer_hosts }}"
+  tags: [postgres_ha, firewall]
+
+- name: Créer le répertoire de configuration Patroni
+  ansible.builtin.file:
+    path: "{{ postgres_ha_config_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0750"
+  tags: [postgres_ha, config]
+
+- name: Créer le répertoire de données Patroni Raft
+  ansible.builtin.file:
+    path: "{{ postgres_ha_raft_data_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0700"
+  tags: [postgres_ha, patroni]
+
+# --- Secrets Vault — récupérés avant le rendu de patroni.yml (voir note en
+# tête de fichier). Toutes ces tâches sont déléguées à localhost : Vault vit
+# sur le cluster K3s, pas sur vm-postgres. no_log strict sur les mots de
+# passe (règle non négociable n°6).
+#
+# Bloc entier non simulable en --check : dépend d'un Vault réel (même garde-
+# fou que roles/vault/tasks/main.yml et deploy-vault-secrets.yml).
+
+- name: Récupérer les secrets PostgreSQL depuis Vault et rendre patroni.yml
+  when: not ansible_check_mode
+  no_log: true
+  block:
+    - name: Récupérer le mot de passe superuser PostgreSQL depuis Vault
+      ansible.builtin.command: >-
+        kubectl exec -n {{ vault_namespace }} {{ vault_release_name }}-0 -- sh -c
+        'VAULT_TOKEN={{ postgres_ha_vault_root_token }} vault kv get -field=password secret/postgres/superuser'
+      delegate_to: localhost
+      become: false
+      register: postgres_ha_superuser_secret
+      changed_when: false
+      tags: [postgres_ha, secrets]
+
+    - name: Récupérer le mot de passe applicatif PostgreSQL depuis Vault
+      ansible.builtin.command: >-
+        kubectl exec -n {{ vault_namespace }} {{ vault_release_name }}-0 -- sh -c
+        'VAULT_TOKEN={{ postgres_ha_vault_root_token }} vault kv get -field=password secret/postgres/app'
+      delegate_to: localhost
+      become: false
+      register: postgres_ha_app_secret
+      changed_when: false
+      tags: [postgres_ha, secrets]
+
+    - name: Définir les mots de passe PostgreSQL en mémoire (superuser, app, replication)
+      ansible.builtin.set_fact:
+        postgres_ha_superuser_password: "{{ postgres_ha_superuser_secret.stdout }}"
+        postgres_ha_app_password: "{{ postgres_ha_app_secret.stdout }}"
+        postgres_ha_replication_password: "{{ vault_postgres_replication_password }}"
+      tags: [postgres_ha, secrets]
+
+    - name: Déployer la configuration Patroni
+      ansible.builtin.template:
+        src: patroni.yml.j2
+        dest: "{{ postgres_ha_config_dir }}/patroni.yml"
+        owner: postgres
+        group: postgres
+        mode: "0640"
+      notify: Restart patroni
+      tags: [postgres_ha, config]
+
+- name: Déployer le service systemd Patroni
+  ansible.builtin.template:
+    src: patroni.service.j2
+    dest: /etc/systemd/system/patroni.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart patroni
+  tags: [postgres_ha, config]
+
+- name: Activer et démarrer Patroni
+  # En --check, le rendu de patroni.yml et du service systemd ci-dessus est
+  # simulé : l'unité n'existe pas encore réellement, rien à démarrer pour de vrai.
+  ansible.builtin.systemd:
+    name: patroni
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: not ansible_check_mode
+  tags: [postgres_ha, service]
+
+- name: Attendre l'initialisation du cluster Patroni (bootstrap initdb)
+  ansible.builtin.pause:
+    seconds: 30
+  when: not ansible_check_mode
+  tags: [postgres_ha, service]
+
+- name: Vérifier la santé de Patroni via l'API REST
+  ansible.builtin.uri:
+    url: "http://localhost:{{ postgres_ha_restapi_port }}/health"
+    status_code: 200
+  register: postgres_ha_health
+  until: postgres_ha_health.status == 200
+  retries: 10
+  delay: 5
+  when: not ansible_check_mode
+  tags: [postgres_ha, service]
+
+- name: Déployer la configuration HAProxy
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart haproxy
+  tags: [postgres_ha, haproxy]
+
+- name: Activer et démarrer HAProxy
+  # En --check, le paquet haproxy n'est pas réellement installé.
+  ansible.builtin.systemd:
+    name: haproxy
+    enabled: true
+    state: started
+  when: not ansible_check_mode
+  tags: [postgres_ha, haproxy]
+
+- name: Déployer la configuration PgBouncer
+  ansible.builtin.template:
+    src: pgbouncer.ini.j2
+    dest: /etc/pgbouncer/pgbouncer.ini
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify: Restart pgbouncer
+  tags: [postgres_ha, pgbouncer]
+
+- name: Vérifier que Vault est unsealed avant PgBouncer
+  ansible.builtin.command: >
+    kubectl exec -n vault vault-0 --
+    vault status -format=json
+  delegate_to: localhost
+  become: false
+  environment:
+    KUBECONFIG: >-
+      {{ k8s_master_kubeconfig_local_dir }}/{{
+      hostvars[groups['k8s_master'][0]].inventory_hostname }}-k3s.yaml
+  register: vault_status_check
+  changed_when: false
+  failed_when: >
+    vault_status_check.rc != 0 or
+    (vault_status_check.stdout | from_json).sealed | bool
+  when: not ansible_check_mode
+  tags: [postgres_ha, pgbouncer]
+
+- name: Déployer la liste des utilisateurs PgBouncer
+  ansible.builtin.template:
+    src: pgbouncer.userlist.j2
+    dest: /etc/pgbouncer/userlist.txt
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  when: not ansible_check_mode
+  no_log: true
+  notify: Restart pgbouncer
+  tags: [postgres_ha, pgbouncer]
+
+- name: Activer et démarrer PgBouncer
+  # En --check, le paquet pgbouncer n'est pas réellement installé.
+  ansible.builtin.systemd:
+    name: pgbouncer
+    enabled: true
+    state: started
+  when: not ansible_check_mode
+  tags: [postgres_ha, pgbouncer]
+
+- name: Créer l'utilisateur applicatif PostgreSQL
+  community.postgresql.postgresql_user:
+    name: "{{ postgres_ha_app_db_user }}"
+    password: "{{ postgres_ha_app_password }}"
+    role_attr_flags: LOGIN
+    login_unix_socket: /var/run/postgresql
+    login_user: postgres
+  become: true
+  become_user: postgres
+  when: not ansible_check_mode
+  no_log: true
+  tags: [postgres_ha, database]

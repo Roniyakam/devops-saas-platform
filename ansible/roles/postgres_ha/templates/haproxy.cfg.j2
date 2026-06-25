@@ -1,0 +1,39 @@
+global
+  log /dev/log local0
+  maxconn 4096
+  daemon
+
+defaults
+  mode tcp
+  log global
+  retries 2
+  timeout connect 5s
+  timeout client 30s
+  timeout server 30s
+
+frontend stats
+  mode http
+  bind *:{{ postgres_ha_haproxy_stats_port }}
+  stats enable
+  stats uri /
+  stats refresh 10s
+
+frontend postgres_primary
+  bind *:{{ postgres_ha_haproxy_primary_port }}
+  default_backend primary
+
+frontend postgres_replica
+  bind *:{{ postgres_ha_haproxy_replica_port }}
+  default_backend replicas
+
+backend primary
+  option httpchk GET /master
+  http-check expect status 200
+  server postgres_primary 127.0.0.1:{{ postgres_ha_port }} check port {{ postgres_ha_restapi_port }} inter 5000 rise 2 fall 3
+
+# Nœud unique pour ce jalon (contrainte portfolio) : ce backend reste DOWN
+# tant qu'aucune réplique n'existe — comportement attendu, pas un bug.
+backend replicas
+  option httpchk GET /replica
+  http-check expect status 200
+  server postgres_replica 127.0.0.1:{{ postgres_ha_port }} check port {{ postgres_ha_restapi_port }} inter 5000 rise 2 fall 3

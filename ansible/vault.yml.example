@@ -8,9 +8,11 @@
 # Clé SSH publique pour l'utilisateur devops (optionnel si gérée via ~/.ssh/authorized_keys)
 # vault_devops_ssh_public_key: "ssh-ed25519 AAAA... user@host"
 
-# Credentials PostgreSQL (S2 - HashiCorp Vault pour K8s)
+# Mot de passe replication Patroni (S3 - roles/postgres_ha, vm-postgres) —
+# seul secret PostgreSQL porté par ce fichier : superuser et appuser vivent
+# dans le Vault K8s (secret/postgres/superuser, secret/postgres/app),
+# bootstrappés par playbooks/deploy-vault-secrets.yml.
 # vault_postgres_replication_password: "changeme"
-# vault_postgres_superuser_password: "changeme"
 
 # Note : depuis la migration vers le stockage Raft, Vault ne dépend plus
 # d'un vault_dev_root_token (mode dev supprimé). Le root token et la clé de

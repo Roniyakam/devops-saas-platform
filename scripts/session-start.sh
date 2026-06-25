@@ -9,10 +9,12 @@ VAULT_PASS="$HOME/.vault_pass"
 
 echo "=== Session Startup ==="
 echo "1. Unsealing Vault..."
-ansible-playbook -i "$ANSIBLE_DIR/inventories/scaleway/hosts.ini" \
-  "$ANSIBLE_DIR/playbooks/deploy-vault.yml" \
+# cd indispensable : ansible.cfg (roles_path) n'est auto-détecté que depuis
+# le cwd, sinon la résolution du rôle "vault" échoue avec des chemins absolus.
+(cd "$ANSIBLE_DIR" && ansible-playbook -i inventories/scaleway/hosts.ini \
+  playbooks/deploy-vault.yml \
   --vault-password-file "$VAULT_PASS" \
-  --tags raft 2>&1 | tail -5
+  --tags raft 2>&1 | tail -5)
 
 echo "2. Checking Vault status..."
 export KUBECONFIG="$ANSIBLE_DIR/fetched/vm-k8s-master-k3s.yaml"

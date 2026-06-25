@@ -1,0 +1,76 @@
+---
+# Variables du rôle postgres_ha — préfixées postgres_ha_*
+# Stack : PostgreSQL 16 + Patroni + HAProxy + PgBouncer, nœud unique
+# (contrainte portfolio — vm-postgres n'est pas dans le cluster K3s,
+# voir incident 001 : un namespace/composant = un owner, jamais ArgoCD ici).
+
+postgres_ha_version: "16"
+postgres_ha_data_dir: "/var/lib/postgresql/16/main"
+postgres_ha_config_dir: "/etc/patroni"
+
+# Patroni installé via pip (pas de paquet apt officiel) — version pinnée
+# (règle non négociable n°5). Extras [raft] : prévu pour une expansion HA
+# future (Raft = consensus distribué Patroni, pas le stockage Vault).
+postgres_ha_patroni_version: "3.3.2"
+postgres_ha_patroni_bin: "/usr/local/bin/patroni"
+
+postgres_ha_cluster_name: "postgres-ha"
+postgres_ha_node_name: "{{ inventory_hostname }}"
+
+postgres_ha_restapi_port: 8008
+postgres_ha_port: 5432
+
+# DCS Patroni : Raft intégré (extras [raft] ci-dessus), pas d'etcd externe
+# requis — port d'écoute du consensus Raft entre nœuds Patroni.
+postgres_ha_raft_port: 5010
+postgres_ha_raft_data_dir: "/var/lib/patroni/raft"
+
+postgres_ha_haproxy_primary_port: 5433
+postgres_ha_haproxy_replica_port: 5434
+postgres_ha_haproxy_stats_port: 5000
+
+postgres_ha_pgbouncer_port: 6432
+# PgBouncer ne se connecte pas directement à PostgreSQL : il passe par le
+# frontend primary de HAProxy (health-checked), qui route vers postgres_ha_port.
+postgres_ha_pgbouncer_target_port: "{{ postgres_ha_haproxy_primary_port }}"
+postgres_ha_pgbouncer_pool_size: 10
+postgres_ha_pgbouncer_max_client_conn: 100
+
+# Dépôt PostgreSQL officiel (pgdg) — fournit postgresql-16 (Ubuntu n'a pas
+# toujours la dernière version majeure dans ses dépôts par défaut)
+postgres_ha_pgdg_gpg_key_url: "https://www.postgresql.org/media/keys/ACCC4CF8.asc"
+postgres_ha_pgdg_gpg_key_path: "/etc/apt/trusted.gpg.d/postgresql-pgdg.asc"
+postgres_ha_pgdg_repo_line: "deb https://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main"
+postgres_ha_pgdg_repo_file: "/etc/apt/sources.list.d/pgdg.list"
+
+postgres_ha_packages:
+  - "postgresql-{{ postgres_ha_version }}"
+  - "postgresql-client-{{ postgres_ha_version }}"
+  - python3-psycopg2
+
+postgres_ha_haproxy_pgbouncer_packages:
+  - haproxy
+  - pgbouncer
+
+# UFW — groupes d'inventaire autorisés, jamais d'IP en dur dans un fichier
+# versionné (règle non négociable n°6). Résolution dynamique via
+# ansible_host dans tasks/main.yml, même pattern que k8s_common
+# (k8s_common_ufw_cluster_groups).
+postgres_ha_ufw_client_groups:
+  - infra
+  - k8s_master
+  - k8s_workers
+
+# Port 8008 (API REST Patroni) et 5000 (stats HAProxy) : accès restreint au
+# seul nœud d'administration (vm-infra), pas à tout le cluster K8s.
+postgres_ha_ufw_admin_groups:
+  - infra
+
+# Raft DCS (consensus Patroni) : trafic inter-nœuds uniquement, jamais
+# ouvert aux clients/admin. Un seul nœud aujourd'hui (groupe "postgres"),
+# règle prête pour l'expansion HA future sans modification.
+postgres_ha_ufw_peer_groups:
+  - postgres
+
+# Application "métier" créée dans PostgreSQL (PgBouncer + accès applicatif)
+postgres_ha_app_db_user: "appuser"

@@ -1,0 +1,2 @@
+"postgres" "md5{{ (postgres_ha_superuser_password + 'postgres') | hash('md5') }}"
+"{{ postgres_ha_app_db_user }}" "md5{{ (postgres_ha_app_password + postgres_ha_app_db_user) | hash('md5') }}"

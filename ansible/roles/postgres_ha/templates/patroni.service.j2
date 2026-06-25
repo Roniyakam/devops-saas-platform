@@ -1,0 +1,13 @@
+[Unit]
+Description=Patroni - PostgreSQL HA orchestrator
+After=network.target
+
+[Service]
+Type=simple
+User=postgres
+ExecStart={{ postgres_ha_patroni_bin }} {{ postgres_ha_config_dir }}/patroni.yml
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
