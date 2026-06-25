@@ -15,6 +15,12 @@ Infrastructure : 5 instances Scaleway zone fr-par-1
 Décisions d'architecture : docs/adr/001-scaleway-environment.md
                             docs/adr/002-instance-sizing.md
 
+## Début de session obligatoire (Vault se rescelle au redémarrage VM)
+
+```bash
+./scripts/session-start.sh
+```
+
 ## Commandes essentielles
 
 ```bash
