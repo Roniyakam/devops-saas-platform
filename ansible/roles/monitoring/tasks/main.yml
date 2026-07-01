@@ -57,6 +57,7 @@
     - { path: "{{ monitoring_base_dir }}/grafana/data", mode: "0777" }
     - { path: "{{ monitoring_base_dir }}/grafana/provisioning/datasources", mode: "0755" }
     - { path: "{{ monitoring_base_dir }}/grafana/provisioning/dashboards", mode: "0755" }
+    - { path: "{{ monitoring_base_dir }}/grafana/dashboards", mode: "0755" }
   loop_control:
     label: "{{ item.path }}"
   tags: [monitoring, config]
@@ -101,13 +102,54 @@
   notify: Restart grafana
   tags: [monitoring, config]
 
-- name: Déployer le fichier Docker Compose de la stack monitoring
+- name: Déployer le provisioning des dashboards Grafana
   ansible.builtin.template:
-    src: docker-compose.yml.j2
-    dest: "{{ monitoring_base_dir }}/docker-compose.yml"
+    src: dashboard-provider.yml.j2
+    dest: "{{ monitoring_base_dir }}/grafana/provisioning/dashboards/dashboard-provider.yml"
     mode: "0644"
-  notify: Recreate monitoring stack
+  notify: Restart grafana
   tags: [monitoring, config]
+
+- name: Déployer les dashboards Grafana
+  ansible.builtin.copy:
+    src: dashboards/
+    dest: "{{ monitoring_base_dir }}/grafana/dashboards/"
+    mode: "0644"
+  notify: Restart grafana
+  tags: [monitoring, config]
+
+# Mot de passe PostgreSQL (superuser) pour postgres-exporter — récupéré
+# depuis Vault avant le rendu de docker-compose.yml, même pattern que
+# roles/postgres_ha/tasks/main.yml (secrets Vault). Délégué à localhost :
+# Vault vit sur le cluster K3s, pas sur vm-monitoring. no_log strict (règle
+# non négociable n°6). Bloc non simulable en --check (dépend d'un Vault
+# réel), même garde-fou que roles/postgres_ha.
+- name: Récupérer le mot de passe PostgreSQL depuis Vault et déployer Docker Compose
+  when: not ansible_check_mode
+  no_log: true
+  block:
+    - name: Récupérer le mot de passe superuser PostgreSQL depuis Vault
+      ansible.builtin.command: >-
+        kubectl exec -n {{ vault_namespace }} {{ vault_release_name }}-0 -- sh -c
+        'VAULT_TOKEN={{ monitoring_vault_root_token }} vault kv get -field=password secret/postgres/superuser'
+      delegate_to: localhost
+      become: false
+      register: monitoring_postgres_password
+      changed_when: false
+      tags: [monitoring, secrets]
+
+    - name: Définir le mot de passe postgres-exporter en mémoire
+      ansible.builtin.set_fact:
+        monitoring_postgres_exporter_dsn_password: "{{ monitoring_postgres_password.stdout }}"
+      tags: [monitoring, secrets]
+
+    - name: Déployer le fichier Docker Compose de la stack monitoring
+      ansible.builtin.template:
+        src: docker-compose.yml.j2
+        dest: "{{ monitoring_base_dir }}/docker-compose.yml"
+        mode: "0644"
+      notify: Recreate monitoring stack
+      tags: [monitoring, config]
 
 # UFW — IP jamais en dur (règle non négociable n°6) : résolution dynamique
 # depuis l'inventaire, même pattern que postgres_ha_ufw_*_hosts. UFW est déjà

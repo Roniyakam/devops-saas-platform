@@ -38,6 +38,7 @@ services:
       - {{ monitoring_base_dir }}/grafana/data:/var/lib/grafana
       - {{ monitoring_base_dir }}/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
       - {{ monitoring_base_dir }}/grafana/provisioning:/etc/grafana/provisioning:ro
+      - {{ monitoring_base_dir }}/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "0.0.0.0:{{ monitoring_grafana_port }}:3000"
     depends_on:
@@ -66,8 +67,9 @@ services:
     container_name: postgres-exporter
     restart: unless-stopped
     environment:
-      # Mot de passe placeholder — pas encore d'utilisateur PostgreSQL dédié
-      # en lecture seule pour le monitoring (voir docs/ci-limitations.md).
-      DATA_SOURCE_NAME: "postgresql://{{ monitoring_postgres_exporter_dsn_user }}:{{ monitoring_postgres_exporter_dsn_password }}@{{ hostvars[groups['postgres'][0]].ansible_host }}:5432/postgres?sslmode=disable"
+      # Mot de passe superuser injecté depuis Vault au déploiement (tasks/main.yml).
+      # Passe par le frontend HAProxy "primary", pas par PostgreSQL en direct
+      # (port 5432 non ouvert aux clients côté UFW — voir defaults/main.yml).
+      DATA_SOURCE_NAME: "postgresql://{{ monitoring_postgres_exporter_dsn_user }}:{{ monitoring_postgres_exporter_dsn_password }}@{{ hostvars[groups['postgres'][0]].ansible_host }}:{{ monitoring_postgres_haproxy_primary_port }}/postgres?sslmode=disable"
     ports:
       - "127.0.0.1:{{ monitoring_postgres_exporter_port }}:9187"

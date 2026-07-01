@@ -8,6 +8,11 @@
 # vault.yml.example et règle non négociable n°6), même pattern que
 # postgres_ha_replication_password dans playbooks/deploy-postgres.yml.
 #
+# Le rôle a aussi besoin du root token Vault (K8s) pour lire
+# secret/postgres/superuser (mot de passe postgres-exporter) — même
+# mécanisme que playbooks/deploy-postgres.yml : root token lu depuis
+# vault-init.yml (chiffré ansible-vault, jamais commité).
+#
 # Usage :
 #   ansible-playbook -i inventories/scaleway/hosts.ini playbooks/deploy-monitoring.yml \
 #     --vault-password-file ~/.vault_pass
@@ -17,6 +22,32 @@
   become: true
   gather_facts: true
   vars_files:
+    - "{{ playbook_dir }}/../roles/vault/defaults/main.yml"
+    - "{{ playbook_dir }}/../roles/k8s_master/defaults/main.yml"
     - "{{ playbook_dir }}/../vault.yml"
+  environment:
+    KUBECONFIG: "{{ vault_kubeconfig_path }}"
+
+  pre_tasks:
+    - name: Lire vault-init.yml pour obtenir le root token Vault
+      ansible.builtin.command: >-
+        ansible-vault view
+        --vault-password-file {{ vault_init_vault_password_file | expanduser }}
+        {{ vault_init_file_path }}
+      register: monitoring_vault_init_content
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      no_log: true
+      when: not ansible_check_mode
+      tags: [monitoring, secrets]
+
+    - name: Extraire le root token et l'exposer au rôle
+      ansible.builtin.set_fact:
+        monitoring_vault_root_token: "{{ (monitoring_vault_init_content.stdout | from_json).root_token }}"
+      no_log: true
+      when: not ansible_check_mode
+      tags: [monitoring, secrets]
+
   roles:
     - role: monitoring
