@@ -27,24 +27,54 @@ commit touching them.
 on vm-infra to enable full lint coverage including infrastructure
 playbooks. Planned for S4.
 
-## postgres-exporter: placeholder DB credentials
+## postgres-exporter: uses the PostgreSQL superuser, not a dedicated read-only user
 
-**deploy-monitoring.yml** / **roles/monitoring** deploy `postgres-exporter`
-against vm-postgres using `monitoring_postgres_exporter_dsn_user` /
-`monitoring_postgres_exporter_dsn_password` (see
-`roles/monitoring/defaults/main.yml`). The password is currently a literal
-placeholder (`PLACEHOLDER_NO_MONITORING_USER_YET`) — there is no dedicated
-read-only PostgreSQL user for monitoring yet, and `postgres-exporter` cannot
-authenticate against vm-postgres until one exists.
+**Resolved**: `postgres-exporter` (`roles/monitoring`) previously used a
+literal placeholder password and could never authenticate, leaving
+`PostgreSQLDown` permanently firing. `playbooks/deploy-monitoring.yml` now
+fetches the real PostgreSQL superuser password from Vault
+(`secret/postgres/superuser`) at deploy time — same root-token-via-
+`vault-init.yml` mechanism as `playbooks/deploy-postgres.yml` — and injects
+it into `DATA_SOURCE_NAME` (see `roles/monitoring/tasks/main.yml`, no
+default committed to `roles/monitoring/defaults/main.yml`, règle n°6).
 
-**Why not fixed now**: creating that user requires changes to
-`roles/postgres_ha` (a read-only role/grant, plus a Vault-backed secret
-following the same pattern as `postgres_ha_replication_password`), which is
-out of scope for the S3 observability task that added the monitoring role.
+**Known trade-off**: `postgres-exporter` authenticates as the PostgreSQL
+superuser (`postgres`), not a dedicated read-only account, which is broader
+access than least-privilege calls for (`docs/security-rules.md`). This was
+an explicit choice for portfolio speed over creating a new
+`postgres_ha_monitoring_*` role/grant in `roles/postgres_ha`.
 
-**Planned fix**: add a `postgres_ha_monitoring_*` read-only role to
-`roles/postgres_ha`, source its password from Vault (K8s, via the CSI
-provider once available — S4), and replace the placeholder in
-`roles/monitoring/defaults/main.yml`. Until then, the `postgres-exporter`
-container in the monitoring stack will run but fail to scrape PostgreSQL
-metrics (Prometheus will show `up{job="postgres-exporter"} == 0`).
+**Possible follow-up**: add a dedicated read-only `postgres_ha_monitoring_*`
+user to `roles/postgres_ha`, store its password in Vault at
+`secret/postgres/monitoring` (same pattern as `secret/postgres/app`), and
+point `postgres-exporter` at it instead of the superuser. Not scheduled.
+
+**Also resolved**: `roles/monitoring/templates/prometheus.yml.j2`'s
+`postgres-exporter` scrape job targeted vm-postgres's IP, even though the
+exporter container actually runs on vm-monitoring itself (same
+docker-compose stack as Prometheus). Fixed to use the Docker Compose
+service name (`postgres-exporter:9187`), same resolution mechanism already
+used by `datasources.yml.j2`.
+
+## Grafana dashboards: panels without a real metrics source (not built)
+
+`roles/monitoring/files/dashboards/` ships 3 dashboards (K8s cluster
+resources, PostgreSQL/Patroni, platform overview) covering only panels
+backed by metrics actually scraped today. Five originally-requested panels
+were left out because nothing in this stack currently produces the data:
+
+- **K8s pods count by namespace** — needs kube-state-metrics deployed into
+  the cluster and scraped by Prometheus (`kube_pod_info` or similar).
+- **HAProxy backend status** — HAProxy (`roles/postgres_ha`) only exposes
+  an HTML stats page (`postgres_ha_haproxy_stats_port`), not a
+  Prometheus-format endpoint. Needs an haproxy exporter (e.g.
+  `prometheus/haproxy-exporter`) pointed at that stats page.
+- **PgBouncer pool utilization** — no pgbouncer exporter is deployed. Needs
+  one added alongside `postgres-exporter` in `roles/monitoring`.
+- **Total requests per service / error rate** — no service in this stack
+  currently exports HTTP request metrics; would need each app/API
+  instrumented (e.g. via a Prometheus client library) once one exists.
+
+**Why not fixed now**: each of these is a new exporter/container or new
+application instrumentation, out of scope for "add dashboards to the
+existing stack." Not scheduled.

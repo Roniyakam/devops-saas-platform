@@ -60,11 +60,15 @@ postgres_ha_ufw_client_groups:
   - infra
   - k8s_master
   - k8s_workers
+  - monitoring
 
 # Port 8008 (API REST Patroni) et 5000 (stats HAProxy) : accès restreint au
-# seul nœud d'administration (vm-infra), pas à tout le cluster K8s.
+# nœud d'administration (vm-infra) et à vm-monitoring (Prometheus scrape le
+# job "patroni" sur 8008/metrics — voir prometheus.yml.j2 ; c'est aussi ce
+# endpoint qui alimente l'alerte PostgreSQLDown, expr up{job="patroni"}==0).
 postgres_ha_ufw_admin_groups:
   - infra
+  - monitoring
 
 # Raft DCS (consensus Patroni) : trafic inter-nœuds uniquement, jamais
 # ouvert aux clients/admin. Un seul nœud aujourd'hui (groupe "postgres"),
