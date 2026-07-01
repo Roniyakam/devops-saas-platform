@@ -27,4 +27,11 @@ kubectl get applications -n argocd 2>/dev/null | \
   grep -v "Synced.*Healthy" | grep -v "^NAME" || \
   echo "All ArgoCD apps Synced/Healthy"
 
+echo "4. Reconciling RabbitMQ celery-worker user (idempotent — restores it if"
+echo "   the rabbitmq pod restarted since persistence.enabled: false wipes"
+echo "   rabbitmqctl-created users; see docs/known-issues.md)..."
+(cd "$ANSIBLE_DIR" && ansible-playbook -i inventories/scaleway/hosts.ini \
+  playbooks/deploy-vault-secrets.yml \
+  --vault-password-file "$VAULT_PASS" 2>&1 | tail -5)
+
 echo "=== Ready to work ==="

@@ -33,3 +33,16 @@ de modules/outils déjà rencontrés et corrigés sur ce projet.
   "connection refused" (stdout vide) avant que le process écoute sur 8200,
   alors que le pod est déjà `Running` : nécessite un `retries`/`until` sur
   `rc in [0, 2]`, pas seulement un `kubectl wait --for=condition=Running`.
+
+- Chart RabbitMQ (`gitops/apps/rabbitmq/application.yaml`) déployé avec
+  `persistence.enabled: false` : tout utilisateur créé via `rabbitmqctl
+  add_user` (ex. `celery-worker`) est perdu au redémarrage du pod
+  `rabbitmq-0`, provoquant un CrashLoopBackOff Celery (`ACCESS_REFUSED`).
+  `gitops/charts/rabbitmq/` n'est qu'un miroir de traçabilité — non
+  consommé par ArgoCD, qui sourced le chart directement depuis
+  `charts.bitnami.com/bitnami` — donc tout template ajouté sous
+  `gitops/charts/rabbitmq/templates/` n'aurait aucun effet. Fix retenu :
+  `ansible/playbooks/deploy-vault-secrets.yml` (idempotent, restaure
+  aussi le secret Vault et redémarre Celery si besoin) rejoué à chaque
+  `scripts/session-start.sh`, plutôt qu'un provisioning déclaratif côté
+  GitOps.
