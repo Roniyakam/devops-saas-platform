@@ -38,3 +38,36 @@
 
 Note: Applications should connect via PgBouncer (6432), not directly
 to HAProxy or PostgreSQL.
+
+## TLS et Certificats
+
+### ArgoCD (certificat auto-signé)
+
+ArgoCD utilise un certificat TLS auto-signé généré lors du déploiement
+(manifeste officiel `install.yaml`, voir
+`roles/k8s_master/tasks/main.yml`). Ce choix est intentionnel pour ce
+portfolio :
+
+**Contexte** : ArgoCD n'est pas exposé publiquement. L'accès se fait via
+`kubectl port-forward svc/argocd-server -n argocd 8080:443` (loopback
+uniquement, 127.0.0.1) exécuté sur vm-infra, combiné à un tunnel SSH depuis
+le poste de l'opérateur — voir README.md, section "Accès aux interfaces".
+Aucune règle UFW n'ouvre de port ArgoCD vers l'extérieur.
+
+**En production** : migration vers cert-manager + Let's Encrypt ou un
+certificat d'entreprise (ex. PKI interne).
+
+```yaml
+# Production upgrade path:
+# 1. Installer cert-manager dans le cluster
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.0/cert-manager.yaml
+
+# 2. Créer un ClusterIssuer Let's Encrypt
+# 3. Ajouter annotation sur ArgoCD Ingress:
+#    cert-manager.io/cluster-issuer: letsencrypt-prod
+# 4. ArgoCD reçoit automatiquement un certificat signé
+```
+
+**Trade-off documenté** : sécurité (pas d'exposition publique) prioritaire
+sur l'UX (avertissement navigateur acceptable en contexte d'administration
+interne).

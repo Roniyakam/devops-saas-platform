@@ -131,6 +131,7 @@ Détail complet : docs/security-rules.md
   segmentation (UFW + NetworkPolicy).
 - CI/CD : OIDC pour l'auth cloud, jamais de credentials long-lived ;
   permissions `contents: read` minimum ; actions tierces pinnées par SHA.
+- TLS : auto-signé intentionnel (voir docs/architecture.md#tls-et-certificats).
 
 ## Plan d'exécution
 
