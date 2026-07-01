@@ -1,0 +1,73 @@
+services:
+  prometheus:
+    image: prom/prometheus:{{ monitoring_prometheus_version }}
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - {{ monitoring_base_dir }}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - {{ monitoring_base_dir }}/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - {{ monitoring_base_dir }}/prometheus/data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time={{ monitoring_retention_days }}d
+      - --web.enable-lifecycle
+    ports:
+      - "127.0.0.1:{{ monitoring_prometheus_port }}:9090"
+
+  loki:
+    image: grafana/loki:{{ monitoring_loki_version }}
+    container_name: loki
+    restart: unless-stopped
+    volumes:
+      - {{ monitoring_base_dir }}/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - {{ monitoring_base_dir }}/loki/data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "127.0.0.1:{{ monitoring_loki_port }}:3100"
+
+  grafana:
+    image: grafana/grafana:{{ monitoring_grafana_version }}
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: "{{ monitoring_grafana_admin_user }}"
+      GF_SECURITY_ADMIN_PASSWORD: "{{ monitoring_grafana_admin_password }}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - {{ monitoring_base_dir }}/grafana/data:/var/lib/grafana
+      - {{ monitoring_base_dir }}/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - {{ monitoring_base_dir }}/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "0.0.0.0:{{ monitoring_grafana_port }}:3000"
+    depends_on:
+      - prometheus
+      - loki
+
+  node-exporter:
+    image: prom/node-exporter:{{ monitoring_node_exporter_version }}
+    container_name: node-exporter
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.rootfs=/rootfs
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    ports:
+      - "127.0.0.1:{{ monitoring_node_exporter_port }}:9100"
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:{{ monitoring_postgres_exporter_version }}
+    container_name: postgres-exporter
+    restart: unless-stopped
+    environment:
+      # Mot de passe placeholder — pas encore d'utilisateur PostgreSQL dédié
+      # en lecture seule pour le monitoring (voir docs/ci-limitations.md).
+      DATA_SOURCE_NAME: "postgresql://{{ monitoring_postgres_exporter_dsn_user }}:{{ monitoring_postgres_exporter_dsn_password }}@{{ hostvars[groups['postgres'][0]].ansible_host }}:5432/postgres?sslmode=disable"
+    ports:
+      - "127.0.0.1:{{ monitoring_postgres_exporter_port }}:9187"

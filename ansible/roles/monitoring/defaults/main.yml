@@ -1,0 +1,59 @@
+---
+# Variables du rôle monitoring — préfixées monitoring_*
+# Stack : Prometheus + Loki + Grafana via Docker Compose sur vm-monitoring
+# (hors cluster K3s, géré uniquement par Ansible — voir incident 001 :
+# un namespace/composant = un owner, jamais ArgoCD ici).
+
+monitoring_base_dir: "/opt/monitoring"
+
+# Versions pinnées (règle non négociable n°5)
+monitoring_docker_compose_version: "2.27.0"
+monitoring_prometheus_version: "v2.53.0"
+monitoring_loki_version: "3.0.0"
+monitoring_grafana_version: "11.1.0"
+monitoring_node_exporter_version: "v1.8.1"
+monitoring_postgres_exporter_version: "v0.15.0"
+
+monitoring_prometheus_port: 9090
+monitoring_loki_port: 3100
+monitoring_grafana_port: 3000
+monitoring_node_exporter_port: 9100
+monitoring_postgres_exporter_port: 9187
+# API REST Patroni exposée par roles/postgres_ha (postgres_ha_restapi_port) —
+# dupliqué ici car ce rôle ne charge pas les defaults de postgres_ha.
+monitoring_patroni_restapi_port: 8008
+
+monitoring_retention_days: 15
+
+monitoring_grafana_admin_user: "admin"
+# Mot de passe Vault (ansible-vault, jamais en clair — règle non négociable
+# n°6). Doit être défini dans vault.yml, voir vault.yml.example.
+monitoring_grafana_admin_password: "{{ vault_monitoring_grafana_admin_password }}"
+
+# UFW — groupes d'inventaire autorisés, jamais d'IP en dur dans un fichier
+# versionné (règle non négociable n°6). Résolution dynamique via
+# ansible_host dans tasks/main.yml, même pattern que postgres_ha_ufw_*_groups.
+monitoring_ufw_admin_groups:
+  - infra
+
+monitoring_ufw_loki_client_groups:
+  - k8s_master
+  - k8s_workers
+
+# Dépôt Docker officiel (apt)
+monitoring_docker_gpg_key_url: "https://download.docker.com/linux/ubuntu/gpg"
+monitoring_docker_repo_line: "deb https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+
+monitoring_docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+
+# postgres-exporter : pas encore d'utilisateur PostgreSQL dédié en lecture
+# seule (nécessiterait de toucher roles/postgres_ha, hors périmètre de ce
+# rôle). Mot de passe placeholder documenté, voir docs/ci-limitations.md —
+# remplacement par un vrai secret Vault planifié S4.
+monitoring_postgres_exporter_dsn_user: "postgres"
+monitoring_postgres_exporter_dsn_password: "PLACEHOLDER_NO_MONITORING_USER_YET"

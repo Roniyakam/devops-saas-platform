@@ -14,6 +14,11 @@
 # bootstrappés par playbooks/deploy-vault-secrets.yml.
 # vault_postgres_replication_password: "changeme"
 
+# Mot de passe admin Grafana (S3 - roles/monitoring, vm-monitoring) — lu par
+# playbooks/deploy-monitoring.yml, jamais en dur dans le playbook ou les
+# defaults du rôle (voir docs/ci-limitations.md pour le détail).
+# vault_monitoring_grafana_admin_password: "changeme"
+
 # Note : depuis la migration vers le stockage Raft, Vault ne dépend plus
 # d'un vault_dev_root_token (mode dev supprimé). Le root token et la clé de
 # unseal sont désormais générés par "vault operator init" et stockés dans

@@ -1,0 +1,14 @@
+---
+# Déploiement de node-exporter (binaire + systemd) sur toutes les VMs hors
+# vm-monitoring : celle-ci a son propre node-exporter via Docker Compose
+# (roles/monitoring), géré par playbooks/deploy-monitoring.yml.
+#
+# Usage :
+#   ansible-playbook -i inventories/scaleway/hosts.ini playbooks/deploy-node-exporter.yml
+
+- name: Déploiement node-exporter (hors vm-monitoring)
+  hosts: "scaleway:!monitoring"
+  become: true
+  gather_facts: true
+  roles:
+    - role: node_exporter

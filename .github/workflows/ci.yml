@@ -33,9 +33,13 @@ jobs:
         run: |
           cd ansible
           ansible-lint -f pep8 playbooks/site.yml playbooks/deploy-k8s.yml \
-            playbooks/deploy-gitops.yml
+            playbooks/deploy-gitops.yml playbooks/deploy-node-exporter.yml
         # Gate: 0 violation requise (profil production)
         # deploy-vault.yml et deploy-vault-secrets.yml exclus : voir ansible/.ansible-lint
+        # deploy-postgres.yml et deploy-monitoring.yml exclus de cette liste (pas de
+        # .ansible-lint exclude_paths) : leurs vars_files pointent vers vault.yml,
+        # absent en CI (jamais commité). Lint manuel sur vm-infra — voir
+        # docs/ci-limitations.md.
 
   yaml-lint:
     name: yaml-lint
