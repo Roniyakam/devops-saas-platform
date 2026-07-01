@@ -1,0 +1,74 @@
+---
+# Rôle node_exporter : binaire + service systemd, pour les VMs sans Docker
+# (infra, k8s-master, k8s-workers, postgres). Cible UFW dynamique uniquement
+# (jamais d'IP en dur — règle non négociable n°6).
+
+- name: Créer le groupe système node_exporter
+  ansible.builtin.group:
+    name: "{{ node_exporter_group }}"
+    system: true
+    state: present
+  tags: [node_exporter, install]
+
+- name: Créer l'utilisateur système node_exporter
+  ansible.builtin.user:
+    name: "{{ node_exporter_user }}"
+    group: "{{ node_exporter_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    state: present
+  tags: [node_exporter, install]
+
+- name: Télécharger l'archive node_exporter (avec vérification checksum)
+  ansible.builtin.get_url:
+    url: "{{ node_exporter_download_url }}"
+    dest: "/tmp/{{ node_exporter_archive_name }}"
+    checksum: "sha256:{{ node_exporter_checksum_sha256 }}"
+    mode: "0644"
+  check_mode: false  # outillage local, pas un changement géré par GitOps (même pattern que roles/postgres_ha)
+  tags: [node_exporter, install]
+
+- name: Extraire l'archive node_exporter
+  ansible.builtin.unarchive:
+    src: "/tmp/{{ node_exporter_archive_name }}"
+    dest: /tmp
+    remote_src: true
+  check_mode: false
+  tags: [node_exporter, install]
+
+- name: Installer le binaire node_exporter
+  ansible.builtin.copy:
+    src: "/tmp/node_exporter-{{ node_exporter_version[1:] }}.linux-amd64/node_exporter"
+    dest: "{{ node_exporter_install_dir }}/node_exporter"
+    remote_src: true
+    owner: "{{ node_exporter_user }}"
+    group: "{{ node_exporter_group }}"
+    mode: "0755"
+  notify: Restart node_exporter
+  tags: [node_exporter, install]
+
+- name: Déployer le service systemd node_exporter
+  ansible.builtin.template:
+    src: node_exporter.service.j2
+    dest: /etc/systemd/system/node_exporter.service
+    mode: "0644"
+  notify: Restart node_exporter
+  tags: [node_exporter, service]
+
+- name: Activer et démarrer node_exporter
+  ansible.builtin.systemd:
+    name: node_exporter
+    enabled: true
+    state: started
+    daemon_reload: true
+  tags: [node_exporter, service]
+
+- name: UFW - Autoriser node_exporter depuis vm-monitoring uniquement
+  community.general.ufw:
+    rule: allow
+    port: "{{ node_exporter_port }}"
+    proto: tcp
+    src: "{{ hostvars[groups[node_exporter_ufw_client_group][0]].ansible_host }}"
+    comment: "node_exporter <- vm-monitoring"
+  tags: [node_exporter, firewall]

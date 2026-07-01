@@ -1,0 +1,22 @@
+---
+# Déploiement de la stack observabilité (Prometheus + Loki + Grafana) sur
+# vm-monitoring, via Docker Compose. Nœud hors cluster K3s, géré uniquement
+# par Ansible (incident 001 : un namespace/composant = un owner).
+#
+# Le mot de passe admin Grafana est lu depuis vault.yml (chiffré
+# ansible-vault, jamais commité avec des vraies valeurs — voir
+# vault.yml.example et règle non négociable n°6), même pattern que
+# postgres_ha_replication_password dans playbooks/deploy-postgres.yml.
+#
+# Usage :
+#   ansible-playbook -i inventories/scaleway/hosts.ini playbooks/deploy-monitoring.yml \
+#     --vault-password-file ~/.vault_pass
+
+- name: Déploiement stack observabilité (Prometheus + Loki + Grafana)
+  hosts: monitoring
+  become: true
+  gather_facts: true
+  vars_files:
+    - "{{ playbook_dir }}/../vault.yml"
+  roles:
+    - role: monitoring

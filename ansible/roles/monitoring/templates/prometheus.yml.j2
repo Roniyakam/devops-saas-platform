@@ -1,0 +1,59 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: devops-saas-platform
+    env: portfolio
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:{{ monitoring_prometheus_port }}"]
+
+  - job_name: node-exporter-monitoring
+    static_configs:
+      - targets: ["localhost:{{ monitoring_node_exporter_port }}"]
+        labels:
+          instance: "{{ inventory_hostname }}"
+
+  - job_name: node-exporter-infra
+    static_configs:
+      - targets: ["{{ hostvars[groups['infra'][0]].ansible_host }}:{{ monitoring_node_exporter_port }}"]
+        labels:
+          instance: "{{ groups['infra'][0] }}"
+
+  - job_name: node-exporter-k8s-master
+    static_configs:
+      - targets: ["{{ hostvars[groups['k8s_master'][0]].ansible_host }}:{{ monitoring_node_exporter_port }}"]
+        labels:
+          instance: "{{ groups['k8s_master'][0] }}"
+
+  - job_name: node-exporter-k8s-workers
+    static_configs:
+{% for worker in groups['k8s_workers'] %}
+      - targets: ["{{ hostvars[worker].ansible_host }}:{{ monitoring_node_exporter_port }}"]
+        labels:
+          instance: "{{ worker }}"
+{% endfor %}
+
+  - job_name: node-exporter-postgres
+    static_configs:
+      - targets: ["{{ hostvars[groups['postgres'][0]].ansible_host }}:{{ monitoring_node_exporter_port }}"]
+        labels:
+          instance: "{{ groups['postgres'][0] }}"
+
+  - job_name: postgres-exporter
+    static_configs:
+      - targets: ["{{ hostvars[groups['postgres'][0]].ansible_host }}:{{ monitoring_postgres_exporter_port }}"]
+        labels:
+          instance: "{{ groups['postgres'][0] }}"
+
+  - job_name: patroni
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["{{ hostvars[groups['postgres'][0]].ansible_host }}:{{ monitoring_patroni_restapi_port }}"]
+        labels:
+          instance: "{{ groups['postgres'][0] }}"

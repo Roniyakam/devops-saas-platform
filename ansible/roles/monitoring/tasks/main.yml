@@ -1,0 +1,168 @@
+---
+# Rôle monitoring : Prometheus + Loki + Grafana via Docker Compose sur
+# vm-monitoring (hors cluster K3s — voir incident 001).
+
+- name: Télécharger la clé GPG du dépôt Docker
+  ansible.builtin.get_url:
+    url: "{{ monitoring_docker_gpg_key_url }}"
+    dest: /tmp/docker.asc
+    mode: "0644"
+  check_mode: false  # outillage local, pas un changement géré par GitOps (même pattern que roles/postgres_ha)
+  tags: [monitoring, repo]
+
+- name: Ajouter la clé GPG du dépôt Docker au trousseau apt
+  ansible.builtin.apt_key:
+    file: /tmp/docker.asc
+    state: present
+  check_mode: false
+  tags: [monitoring, repo]
+
+- name: Ajouter le dépôt Docker officiel
+  ansible.builtin.apt_repository:
+    repo: "{{ monitoring_docker_repo_line }}"
+    filename: docker
+    state: present
+  notify: Update apt cache
+  tags: [monitoring, repo]
+
+- name: Forcer l'exécution immédiate des handlers (cache apt à jour avant installation)
+  ansible.builtin.meta: flush_handlers
+  tags: [monitoring, repo]
+
+- name: Installer Docker Engine et le plugin Compose
+  ansible.builtin.apt:
+    name: "{{ monitoring_docker_packages }}"
+    state: present
+  tags: [monitoring, packages]
+
+- name: Activer et démarrer le service Docker
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+  tags: [monitoring, packages]
+
+- name: Créer l'arborescence de la stack monitoring
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ monitoring_base_dir }}", mode: "0755" }
+    - { path: "{{ monitoring_base_dir }}/prometheus", mode: "0755" }
+    - { path: "{{ monitoring_base_dir }}/prometheus/data", mode: "0777" }
+    - { path: "{{ monitoring_base_dir }}/loki", mode: "0755" }
+    - { path: "{{ monitoring_base_dir }}/loki/data", mode: "0777" }
+    - { path: "{{ monitoring_base_dir }}/grafana", mode: "0755" }
+    - { path: "{{ monitoring_base_dir }}/grafana/data", mode: "0777" }
+    - { path: "{{ monitoring_base_dir }}/grafana/provisioning/datasources", mode: "0755" }
+    - { path: "{{ monitoring_base_dir }}/grafana/provisioning/dashboards", mode: "0755" }
+  loop_control:
+    label: "{{ item.path }}"
+  tags: [monitoring, config]
+
+- name: Déployer la configuration Prometheus
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ monitoring_base_dir }}/prometheus/prometheus.yml"
+    mode: "0644"
+  notify: Restart prometheus
+  tags: [monitoring, config]
+
+- name: Déployer les règles d'alerte Prometheus
+  ansible.builtin.template:
+    src: prometheus-alerts.yml.j2
+    dest: "{{ monitoring_base_dir }}/prometheus/alerts.yml"
+    mode: "0644"
+  notify: Restart prometheus
+  tags: [monitoring, config]
+
+- name: Déployer la configuration Loki
+  ansible.builtin.template:
+    src: loki-config.yml.j2
+    dest: "{{ monitoring_base_dir }}/loki/loki-config.yml"
+    mode: "0644"
+  notify: Restart loki
+  tags: [monitoring, config]
+
+- name: Déployer la configuration Grafana
+  ansible.builtin.template:
+    src: grafana.ini.j2
+    dest: "{{ monitoring_base_dir }}/grafana/grafana.ini"
+    mode: "0644"
+  notify: Restart grafana
+  tags: [monitoring, config]
+
+- name: Déployer le provisioning des datasources Grafana (Prometheus + Loki)
+  ansible.builtin.template:
+    src: datasources.yml.j2
+    dest: "{{ monitoring_base_dir }}/grafana/provisioning/datasources/datasources.yml"
+    mode: "0644"
+  notify: Restart grafana
+  tags: [monitoring, config]
+
+- name: Déployer le fichier Docker Compose de la stack monitoring
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ monitoring_base_dir }}/docker-compose.yml"
+    mode: "0644"
+  notify: Recreate monitoring stack
+  tags: [monitoring, config]
+
+# UFW — IP jamais en dur (règle non négociable n°6) : résolution dynamique
+# depuis l'inventaire, même pattern que postgres_ha_ufw_*_hosts. UFW est déjà
+# activé globalement par le rôle common (allow + enable) : ce rôle ajoute
+# uniquement ses règles allow.
+
+- name: Déterminer les hosts autorisés à l'administration Grafana/Prometheus
+  ansible.builtin.set_fact:
+    monitoring_ufw_admin_hosts: "{{ monitoring_ufw_admin_groups | map('extract', groups) | sum(start=[]) | unique | list }}"
+  tags: [monitoring, firewall]
+
+- name: Déterminer les hosts autorisés à interroger Loki
+  ansible.builtin.set_fact:
+    monitoring_ufw_loki_client_hosts: "{{ monitoring_ufw_loki_client_groups | map('extract', groups) | sum(start=[]) | unique | list }}"
+  tags: [monitoring, firewall]
+
+- name: UFW - Autoriser Grafana et Prometheus depuis vm-infra
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.0 }}"
+    proto: tcp
+    src: "{{ hostvars[item.1].ansible_host }}"
+    comment: "monitoring - {{ item.1 }}"
+  loop: "{{ [monitoring_grafana_port, monitoring_prometheus_port] | product(monitoring_ufw_admin_hosts) | list }}"
+  loop_control:
+    label: "{{ item.0 }}/tcp <- {{ item.1 }}"
+  tags: [monitoring, firewall]
+
+- name: UFW - Autoriser Loki depuis le cluster K8s
+  community.general.ufw:
+    rule: allow
+    port: "{{ monitoring_loki_port }}"
+    proto: tcp
+    src: "{{ hostvars[item].ansible_host }}"
+    comment: "monitoring loki - {{ item }}"
+  loop: "{{ monitoring_ufw_loki_client_hosts }}"
+  tags: [monitoring, firewall]
+
+- name: Démarrer la stack Docker Compose monitoring
+  ansible.builtin.command: docker compose -f {{ monitoring_base_dir }}/docker-compose.yml up -d
+  register: monitoring_compose_up
+  changed_when: >-
+    'Created' in monitoring_compose_up.stdout or
+    'Recreated' in monitoring_compose_up.stdout or
+    'Started' in monitoring_compose_up.stdout
+  when: not ansible_check_mode
+  tags: [monitoring, service]
+
+- name: Attendre que Grafana soit prêt
+  ansible.builtin.uri:
+    url: "http://localhost:{{ monitoring_grafana_port }}/api/health"
+    status_code: 200
+  register: monitoring_grafana_health
+  until: monitoring_grafana_health.status == 200
+  retries: 20
+  delay: 5
+  when: not ansible_check_mode
+  tags: [monitoring, service]
