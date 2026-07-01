@@ -15,7 +15,10 @@ scrape_configs:
 
   - job_name: node-exporter-monitoring
     static_configs:
-      - targets: ["localhost:{{ monitoring_node_exporter_port }}"]
+      # node-exporter tourne dans le même docker-compose que Prometheus mais
+      # dans un conteneur distinct : résolution par nom de service Docker
+      # Compose, même mécanisme que postgres-exporter ci-dessous.
+      - targets: ["node-exporter:{{ monitoring_node_exporter_port }}"]
         labels:
           instance: "{{ inventory_hostname }}"
 
