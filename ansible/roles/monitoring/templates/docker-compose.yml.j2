@@ -24,7 +24,12 @@ services:
       - {{ monitoring_base_dir }}/loki/data:/loki
     command: -config.file=/etc/loki/local-config.yaml
     ports:
-      - "127.0.0.1:{{ monitoring_loki_port }}:3100"
+      # 0.0.0.0 (pas 127.0.0.1) : Falcosidekick pousse ses logs depuis le
+      # cluster K3s (vm-k8s-master/worker), donc Loki doit être joignable
+      # depuis l'extérieur de l'hôte. Protection par UFW (monitoring_ufw_loki_client_groups),
+      # même pattern que Grafana/Patroni/PgBouncer dans ce repo (voir S1
+      # kubernetes-security-runtime).
+      - "0.0.0.0:{{ monitoring_loki_port }}:3100"
 
   grafana:
     image: grafana/grafana:{{ monitoring_grafana_version }}
