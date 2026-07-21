@@ -1,0 +1,48 @@
+# Falco + Falcosidekick (S1 detection layer, kubernetes-security-runtime
+# repo). Deviates from the flat gitops/apps/kubernetes-security-runtime.yaml
+# path originally sketched for this Application: follows the existing
+# subfolder/application.yaml convention used by vault/, rabbitmq/, celery/
+# in this same directory instead — app-of-apps.yaml recurses gitops/apps/
+# either way (directory.recurse: true), so both layouts are discovered
+# identically; this just matches the sibling Applications.
+#
+# `sources` (multi-source, not the single `source` originally sketched):
+# falcosecurity/falco is a Helm-repo chart, not a git chart, so it can't
+# carry local valueFiles on its own. The `$values` git ref pulls
+# values.yaml/custom-rules.yaml straight from kubernetes-security-runtime
+# and layers them on top of the chart — stable ArgoCD pattern since 2.6
+# (this cluster runs 2.10.4). Falcosidekick is a bundled subchart of
+# falcosecurity/falco (condition: falcosidekick.enabled) so this one
+# Application/one Helm release produces both the Falco DaemonSet and the
+# Falcosidekick Deployment — see kubernetes-security-runtime/gitops/falco/
+# values.yaml for why no second Application was created for it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kubernetes-security-runtime
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://falcosecurity.github.io/charts
+      chart: falco
+      targetRevision: 9.1.0
+      helm:
+        valueFiles:
+          - $values/gitops/falco/values.yaml
+          - $values/gitops/falco/custom-rules.yaml
+          - $values/gitops/falcosidekick/values.yaml
+    - repoURL: https://github.com/Roniyakam/kubernetes-security-runtime
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: falco
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
