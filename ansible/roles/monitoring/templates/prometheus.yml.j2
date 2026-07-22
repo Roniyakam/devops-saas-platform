@@ -63,3 +63,16 @@ scrape_configs:
       - targets: ["{{ hostvars[groups['postgres'][0]].ansible_host }}:{{ monitoring_patroni_restapi_port }}"]
         labels:
           instance: "{{ groups['postgres'][0] }}"
+
+  - job_name: kubernetes-security-runtime-webhook
+    metrics_path: /metrics
+    static_configs:
+      # Port 30090 is a NodePort (kube-proxy routes to the pod on whichever
+      # node it actually runs on, regardless of which node IP is used here)
+      # -- owned by kubernetes-security-runtime's gitops/webhook/service.yaml
+      # ("webhook-metrics" Service), not by this role. Not
+      # svc.cluster.local/ClusterIP: this host has no route into the K3s
+      # pod network, see kubernetes-security-runtime/docs/known-issues.md.
+      - targets: ["{{ hostvars[groups['k8s_master'][0]].ansible_host }}:30090"]
+        labels:
+          instance: "{{ groups['k8s_master'][0] }}"
