@@ -16,6 +16,16 @@
 # Application/one Helm release produces both the Falco DaemonSet and the
 # Falcosidekick Deployment — see kubernetes-security-runtime/gitops/falco/
 # values.yaml for why no second Application was created for it.
+#
+# 3rd source (S2, plain "Directory" source — no `ref`, no `helm:` block):
+# gitops/webhook/ is custom application YAML (ServiceAccount/ClusterRole/
+# ClusterRoleBinding/Deployment/Service for the S2 response webhook), not a
+# Helm values overlay, so it can't ride the `$values` ref like the falco
+# sources above — the `$values` ref only ever supplies valueFiles to the
+# Helm source, it doesn't apply manifests on its own (verified: a `ref`-only
+# source with no `helm:`/`chart:`/`path:` produces nothing). ArgoCD applies
+# each source's output independently within the same Application/sync, so
+# this doesn't need — and deliberately avoids — a second Application.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -37,6 +47,9 @@ spec:
     - repoURL: https://github.com/Roniyakam/kubernetes-security-runtime
       targetRevision: main
       ref: values
+    - repoURL: https://github.com/Roniyakam/kubernetes-security-runtime
+      targetRevision: main
+      path: gitops/webhook
   destination:
     server: https://kubernetes.default.svc
     namespace: falco
